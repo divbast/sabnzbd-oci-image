@@ -28,12 +28,9 @@ jobs:
     name: stall
     uses: divbast/ci/.github/workflows/stall.yml@7dbf8402526745fc9f5781de3117dbbdf3f6a808 # v4.31.0
     with:
-      # No slots: they count the slots that should have published, and this
-      # repository publishes nothing to ghcr.io. An app turns them on once
-      # its first image is public: README.md's "Making a new app", step 8.
-      checks: '["open","stuck","renovate","lookups"]'
-    # Everything stall.yml's job asks for, slots or not: a called job that
-    # asks for more than its caller grants fails.
+      published: ghcr.io/divbast/sabnzbd:latest
+    # Everything stall.yml's job asks for: a called job that asks for more
+    # than its caller grants fails.
     permissions:
       contents: read # read main, compare commits, the repository's age
       pull-requests: read # list Renovate's pull requests
