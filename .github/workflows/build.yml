@@ -41,18 +41,11 @@ jobs:
     name: check
     uses: divbast/ci/.github/workflows/app-check.yml@7dbf8402526745fc9f5781de3117dbbdf3f6a808 # v4.31.0
     with:
-      # PHPStan over the PHP layer: a Go or .NET app made from the template
-      # drops this with layers/php
-      php: true
       # The DHI login, without which dhi.io answers nothing: the lint and
       # the build log in with it to read a Containerfile's Docker Hardened
       # Images. An app whose divbast/infra entry has no dhi = true reads
       # both empty, and ci skips the login.
       dhi-username: ${{ vars.DHI_USERNAME }}
-      # The .NET layer's images, which the lint verifies before it runs
-      # any. README.md's "Making a new app", step 0, drops this with
-      # layers/.
-      verify-containerfiles: layers/dotnet/Containerfile
     secrets:
       DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
     permissions:
