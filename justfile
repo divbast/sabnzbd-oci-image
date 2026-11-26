@@ -61,7 +61,14 @@ ci-checkout:
 # Every lint gate. Needs a running Docker daemon, for docker build --check,
 # logged in to dhi.io for the Containerfile's images
 lint:
-    {{ just_executable() }} ci-fresh actions-check workflow-audit actionlint shell-lint go-lint go-test reuse-lint app-lint
+    {{ just_executable() }} ci-fresh actions-check workflow-audit actionlint shell-lint go-lint go-test reuse-lint app-lint pins-check
+
+# The Python locks and unrar's checksum, held to the pins: fails, with a
+# diff, when go run ./cmd/divbast-pins would change any of them. It reads
+# SABnzbd's requirements from GitHub, the releases from PyPI and unrar's
+# tarball from RARLAB, so it needs the network
+pins-check:
+    go run ./cmd/divbast-pins -check
 
 # Every gate. Run before committing
 ci:

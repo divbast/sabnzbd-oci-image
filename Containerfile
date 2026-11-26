@@ -4,10 +4,20 @@
 # The app's own version, which tags the image: app-publish.yml reads it from
 # this line, by the name build.yml gives as version-arg
 ARG SABNZBD_VERSION=5.2.0RC2
-# The runtime: static-debian13, since the binary is static, with nothing in
-# it but CA certificates, time zones and /etc/passwd. CI verifies its
-# signature by the distroless project before anything is built.
-ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian13:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
+# The commit SABNZBD_VERSION's tag names. go run ./cmd/divbast-pins reads it,
+# to lock the Python packages SABnzbd's requirements.txt there asks for.
+ARG SABNZBD_COMMIT=ffc619947b5ba4e6520e3a0bc70680024e184b2f
+# unrar's source, as RARLAB names its tarball, and the sha256 of the one it
+# served when the version was pinned, which go run ./cmd/divbast-pins writes
+ARG UNRAR_VERSION=7.3.2
+ARG UNRAR_SHA256=f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99
+# 7-Zip's release, and the commit its tag names
+ARG SEVENZIP_VERSION=26.06
+ARG SEVENZIP_COMMIT=d3296e39e1f1f92c7b41c0c3848e65640428d42d
+# The runtime: Docker Hardened Images' Python, which SABnzbd runs on. Its
+# version is the Python the locks are generated for. CI verifies its
+# signature by Docker before anything is built.
+ARG RUNTIME_IMAGE=dhi.io/python:3.15.2-debian13@sha256:c6c9414d78bd285be1a4dacfb94ae61732c77019605b1678792823e319b720f6
 
 # The newest stable Go, by digest. Only the binary leaves this stage.
 FROM golang:1.27.4-trixie@sha256:430985542100b871e108ccc00e8dcc5eef08ca14ee5825e98ebf563d8ffec4ee AS build
