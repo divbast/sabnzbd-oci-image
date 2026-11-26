@@ -2,6 +2,11 @@
 # the source builds need, which never ship in the image.
 # Do not edit it: change the pins, then run go run ./cmd/divbast-pins again.
 
+# pins.txt: builds sabctools from source, for scikit-build-core, since Docker Hardened Images have no cmake
+cmake==4.4.5 \
+    --hash=sha256:25fc8469e67857124ef10c002331c0ab416eb7b8d9e1d6e4c58e84e730013ece \
+    --hash=sha256:85625a9b6d5e88ff99c7eb79123d85570844e77ac076366cf75c609cc0b1b579
+
 # pins.txt: builds PyYAML from source
 cython==3.3.2 \
     --hash=sha256:93ebae3f7d1cd0ce5e49cdc8df2e83c54596fe2f1971767738efb78f43e4032b

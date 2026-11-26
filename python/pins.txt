@@ -27,3 +27,6 @@ maturin==1.16.0
 
 # builds PyYAML from source
 cython==3.3.2
+
+# builds sabctools from source, for scikit-build-core, since Docker Hardened Images have no cmake
+cmake==4.4.5

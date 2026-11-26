@@ -58,3 +58,24 @@ func WriteLock(w io.Writer, l Lock) error {
 	_, err := io.WriteString(w, b.String())
 	return err
 }
+
+// WriteFiles writes every file of locked, one a line, as its sha256 and the
+// URL PyPI serves it at, after the header as comments, in the order of
+// their URLs: what a build fetches, and checks, before pip reads anything,
+// so no package's code runs while the network is on.
+func WriteFiles(w io.Writer, header []string, locked []Locked) error {
+	var b strings.Builder
+	for _, h := range header {
+		b.WriteString("# " + h + "\n")
+	}
+	var files []File
+	for _, l := range locked {
+		files = append(files, l.Files...)
+	}
+	slices.SortFunc(files, func(a, b File) int { return cmp.Compare(a.URL, b.URL) })
+	for _, f := range files {
+		b.WriteString(f.SHA256 + " " + f.URL + "\n")
+	}
+	_, err := io.WriteString(w, b.String())
+	return err
+}

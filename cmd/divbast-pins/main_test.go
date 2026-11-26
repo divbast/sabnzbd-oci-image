@@ -140,6 +140,17 @@ func TestCheckMode(t *testing.T) {
 	if b := read(t, dir, "python/build.lock"); !strings.Contains(b, "setuptools==82.0.1 \\\n") {
 		t.Errorf("build.lock =\n%s\nwant setuptools 82.0.1", b)
 	}
+	// Every file either lock lets pip take, by its sha256 and URL, and no other
+	files := read(t, dir, "python/files.txt")
+	for _, f := range []string{"six-1.17.0-py2.py3-none-any.whl", "ujson-6.0.0.tar.gz", "cryptography-50.0.2.tar.gz", "setuptools-82.0.1-py3-none-any.whl"} {
+		h := sha256.Sum256([]byte(f))
+		if want := hex.EncodeToString(h[:]) + " https://files.example/" + f + "\n"; !strings.Contains(files, want) {
+			t.Errorf("files.txt =\n%s\nwant it to hold %q", files, want)
+		}
+	}
+	if n := strings.Count(files, " https://"); n != 4 {
+		t.Errorf("files.txt names %d files, want the 4 the locks take", n)
+	}
 	cf := read(t, dir, "Containerfile")
 	if want := strings.Replace(containerfile, strings.Repeat("0", 64), hex.EncodeToString(sum[:]), 1); cf != want {
 		t.Errorf("Containerfile =\n%s\nwant only UNRAR_SHA256 changed, to the served tarball's", cf)
