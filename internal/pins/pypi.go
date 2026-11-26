@@ -86,10 +86,13 @@ type PyPI struct {
 	Delays []time.Duration
 }
 
-// File is one file of a release.
+// File is one file of a release. Yanked is PyPI's mark on a release
+// withdrawn under PEP 592, with the reason PyPI gives, on one line.
 type File struct {
 	Name, URL, SHA256 string
 	Wheel             bool
+	Yanked            bool
+	YankedReason      string
 }
 
 // files reads the files of name's release version.
@@ -106,7 +109,8 @@ func (c *PyPI) files(ctx context.Context, name, version string) ([]File, error) 
 			Digests     struct {
 				SHA256 string `json:"sha256"`
 			} `json:"digests"`
-			Yanked bool `json:"yanked"`
+			Yanked       bool    `json:"yanked"`
+			YankedReason *string `json:"yanked_reason"`
 		} `json:"urls"`
 	}
 	if err = json.Unmarshal(body, &rel); err != nil {
@@ -114,13 +118,17 @@ func (c *PyPI) files(ctx context.Context, name, version string) ([]File, error) 
 	}
 	var out []File
 	for _, f := range rel.URLs {
-		if f.Yanked {
-			return nil, fmt.Errorf("%s %s is yanked on PyPI: pin another release", name, version)
-		}
 		if !sha256Hex.MatchString(f.Digests.SHA256) {
 			return nil, fmt.Errorf("%s %s: PyPI gives %s no sha256", name, version, f.Filename)
 		}
-		out = append(out, File{Name: f.Filename, URL: f.URL, SHA256: f.Digests.SHA256, Wheel: f.PackageType == "bdist_wheel"})
+		reason := ""
+		if f.YankedReason != nil {
+			reason = strings.Join(strings.Fields(*f.YankedReason), " ")
+		}
+		out = append(out, File{
+			Name: f.Filename, URL: f.URL, SHA256: f.Digests.SHA256, Wheel: f.PackageType == "bdist_wheel",
+			Yanked: f.Yanked, YankedReason: reason,
+		})
 	}
 	slices.SortFunc(out, func(a, b File) int { return cmp.Compare(a.Name, b.Name) })
 	return out, nil
@@ -154,18 +162,48 @@ type Locked struct {
 	// FromSource is true for a source release, which the build turns into
 	// a wheel.
 	FromSource bool
+	// Yanked is true for a release PyPI has yanked that upstream pins with
+	// ==, which pip installs all the same, and YankedReason PyPI's reason.
+	Yanked       bool
+	YankedReason string
+}
+
+// yanked reports whether PyPI has yanked the release files are of, and
+// the reason it gives.
+func yanked(files []File) (yes bool, reason string) {
+	for _, f := range files {
+		if f.Yanked {
+			return true, f.YankedReason
+		}
+	}
+	return false, ""
+}
+
+// refuseYanked is the error for a yanked release that pins.txt names.
+func refuseYanked(p Pinned, reason string) error {
+	if reason != "" {
+		reason = " (" + reason + ")"
+	}
+	return fmt.Errorf("%s %s is yanked on PyPI%s: pin another release in pins.txt", p.Name, p.Version, reason)
 }
 
 // ChooseFiles picks the one file of p's release the image installs: its
 // pure wheel when it has one, and else its source release, which the build
-// compiles against the image's own libraries. A release with neither, or
-// yanked, is an error.
+// compiles against the image's own libraries. A release with neither is an
+// error, and so is a yanked one, unless upstream pins it with ==: pip
+// installs a yanked release pinned so, and nothing here may move that pin.
 func ChooseFiles(ctx context.Context, c *PyPI, p Pinned) (Locked, error) {
 	files, err := c.files(ctx, p.Name, p.Version)
 	if err != nil {
 		return Locked{}, fmt.Errorf("%s %s: %w", p.Name, p.Version, err)
 	}
 	l := Locked{Name: p.Name, Version: p.Version, Why: p.Why}
+	if y, reason := yanked(files); y {
+		if !p.Upstream {
+			return Locked{}, refuseYanked(p, reason)
+		}
+		l.Yanked, l.YankedReason = true, reason
+	}
 	if i := slices.IndexFunc(files, pure); i >= 0 {
 		l.Files = []File{files[i]}
 		return l, nil
@@ -235,6 +273,10 @@ func ChooseBuildFiles(ctx context.Context, c *PyPI, p Pinned) (Locked, error) {
 	files, err := c.files(ctx, p.Name, p.Version)
 	if err != nil {
 		return Locked{}, fmt.Errorf("%s %s: %w", p.Name, p.Version, err)
+	}
+	// Every build backend is pins.txt's
+	if y, reason := yanked(files); y {
+		return Locked{}, refuseYanked(p, reason)
 	}
 	l := Locked{Name: p.Name, Version: p.Version, Why: p.Why}
 	if i := slices.IndexFunc(files, pure); i >= 0 {

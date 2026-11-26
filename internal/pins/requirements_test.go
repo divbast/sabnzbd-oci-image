@@ -112,6 +112,12 @@ func TestMergePins(t *testing.T) {
 	if slices.ContainsFunc(got, func(p Pinned) bool { return p.Name == "setuptools" }) {
 		t.Error("Merge() put a build backend among the image's packages")
 	}
+	// Upstream's == pins, and those alone, are upstream's
+	for name, upstream := range map[string]bool{"sabctools": true, "cryptography": false, "tzdata": false} {
+		if i := slices.IndexFunc(got, func(p Pinned) bool { return p.Name == name }); i < 0 || got[i].Upstream != upstream {
+			t.Errorf("Merge() has %s as %+v, want Upstream %t", name, got, upstream)
+		}
+	}
 	if b := Build(pins); len(b) != 1 || b[0].Name != "setuptools" || b[0].Version != "82.0.1" {
 		t.Errorf("Build() = %+v, want setuptools 82.0.1 alone", b)
 	}

@@ -21,12 +21,13 @@
     },
     {
       "customType": "regex",
-      "description": "ARG UNRAR_VERSION, the name of the unrar tarball RARLAB links, from the rarlab datasource above. The checksum on the next line is written by go run ./cmd/divbast-pins in the same PR, from the tarball RARLAB serves then.",
+      "description": "ARG UNRAR_VERSION, the name of the unrar tarball RARLAB links, from the rarlab datasource above, and the ARG UNRAR_SHA256 beneath it, which the update empties: go run ./cmd/divbast-pins fills an empty one in, in the same PR, from the tarball RARLAB serves then, and never rewrites a set one, so a different file under the same name fails every later run instead of being taken. The two ARGs must stay adjacent and in this order.",
       "managerFilePatterns": ["/^Containerfile$/"],
-      "matchStrings": ["ARG UNRAR_VERSION=(?<currentValue>\\S+)\\n"],
+      "matchStrings": ["ARG UNRAR_VERSION=(?<currentValue>\\S+)\\nARG UNRAR_SHA256=[0-9a-f]*\\n"],
       "depNameTemplate": "unrar",
       "datasourceTemplate": "custom.rarlab",
-      "versioningTemplate": "loose"
+      "versioningTemplate": "loose",
+      "autoReplaceStringTemplate": "ARG UNRAR_VERSION={{{newValue}}}\nARG UNRAR_SHA256=\n"
     },
     {
       "customType": "regex",
@@ -70,7 +71,7 @@
       }
     },
     {
-      "description": "unrar's tarballs, betas included, which RARLAB's page links, newest first. Each merges once green, on the checksum of what RARLAB served when the PR was made, which the repository's own command writes.",
+      "description": "unrar's tarballs, betas included, which RARLAB's page links, newest first. Each merges once green, on the checksum of what RARLAB served when the PR was made, which the repository's own command writes into the UNRAR_SHA256 the update emptied.",
       "matchDepNames": ["unrar"],
       "extractVersion": "unrarsrc-(?<version>[0-9.]+)\\.tar\\.gz$",
       "ignoreUnstable": false,

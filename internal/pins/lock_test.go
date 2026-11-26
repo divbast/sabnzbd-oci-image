@@ -57,4 +57,20 @@ six==1.17.0 \
 	if got := lock(pure); strings.Contains(got, "--no-binary") {
 		t.Errorf("WriteLock() of pure wheels alone =\n%s\nwant no --no-binary line", got)
 	}
+	// A yanked release upstream pins says so, and why, beside its pin
+	yanked := pure
+	yanked.Yanked, yanked.YankedReason = true, "broken metadata"
+	if got := lock(yanked); !strings.Contains(got, "\n# pinned by upstream; yanked on PyPI: broken metadata\nsix==1.17.0 \\\n") {
+		t.Errorf("WriteLock() of a yanked release =\n%s\nwant its comment to say it is yanked, and why", got)
+	}
+	// The reason is the maintainer's text: it stays one comment line, so it
+	// can never add a line pip would read
+	yanked.YankedReason = "bad build\n--index-url https://elsewhere.example/simple\r\n"
+	if got := lock(yanked); strings.Contains(got, "\n--index-url") || !strings.Contains(got, "# pinned by upstream; yanked on PyPI: bad build --index-url https://elsewhere.example/simple\nsix==") {
+		t.Errorf("WriteLock() of a reason with line breaks =\n%s\nwant it on the comment's one line", got)
+	}
+	yanked.YankedReason = ""
+	if got := lock(yanked); !strings.Contains(got, "\n# pinned by upstream; yanked on PyPI, with no reason given\nsix==1.17.0 \\\n") {
+		t.Errorf("WriteLock() of a yanked release with no reason =\n%s\nwant its comment to say it is yanked", got)
+	}
 }

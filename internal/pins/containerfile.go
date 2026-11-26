@@ -25,6 +25,9 @@ var pythonTag = regexp.MustCompile(`dhi\.io/python:(\d+)\.(\d+)\.(\d+)-`)
 var (
 	commitHex  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	unrarValue = regexp.MustCompile(`^\d+(\.\d+)*$`)
+	// unrarSum is a sha256, or nothing: Renovate's unrar update empties it,
+	// for Generate to fill in.
+	unrarSum = regexp.MustCompile(`^([0-9a-f]{64})?$`)
 )
 
 // arg returns the value of the one ARG name=value line of containerfile.
@@ -51,7 +54,7 @@ func ReadArgs(containerfile []byte) (Args, error) {
 	}{
 		{"SABNZBD_COMMIT", &a.SABnzbdCommit, commitHex},
 		{"UNRAR_VERSION", &a.UnrarVersion, unrarValue},
-		{"UNRAR_SHA256", &a.UnrarSHA256, sha256Hex},
+		{"UNRAR_SHA256", &a.UnrarSHA256, unrarSum},
 	} {
 		value, err := arg(containerfile, v.name)
 		switch {

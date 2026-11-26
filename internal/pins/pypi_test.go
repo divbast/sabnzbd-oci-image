@@ -21,6 +21,7 @@ type file struct {
 	URL         string            `json:"url"`
 	Digests     map[string]string `json:"digests"`
 	Yanked      bool              `json:"yanked"`
+	Reason      string            `json:"yanked_reason,omitempty"`
 }
 
 // sdist and wheel are a release's files, each with a sha256 made from its
@@ -73,25 +74,32 @@ func TestChooseFiles(t *testing.T) {
 			sdist("ujson-6.0.0.tar.gz"),
 		},
 		"windows-only/1.0": {wheel("windows_only-1.0-cp315-cp315-win_amd64.whl")},
-		"pulled/1.0":       {func() file { f := sdist("pulled-1.0.tar.gz"); f.Yanked = true; return f }()},
+		"pulled/1.0":       {func() file { f := sdist("pulled-1.0.tar.gz"); f.Yanked, f.Reason = true, "broken metadata"; return f }()},
 	})
 	c := &PyPI{Base: srv.URL, Client: srv.Client()}
 	for _, tt := range []struct {
 		name, version, want string
 		fromSource          bool
 		wantErr             string
+		// upstream is a release SABnzbd pins with ==, and yanked the reason
+		// PyPI gives for yanking it, which the lock must keep
+		upstream bool
+		yanked   string
 	}{
 		{name: "idna", version: "3.20", want: "idna-3.20-py3-none-any.whl"},
 		{name: "six", version: "1.17.0", want: "six-1.17.0-py2.py3-none-any.whl"},
 		{name: "charset_normalizer", version: "3.5.2", want: "charset_normalizer-3.5.2-py3-none-any.whl"},
 		{name: "ujson", version: "6.0.0", want: "ujson-6.0.0.tar.gz", fromSource: true},
 		{name: "windows-only", version: "1.0", wantErr: "neither a pure wheel nor a source release"},
+		// A yanked release pins.txt names is refused; one upstream pins with
+		// == is kept, as pip keeps it, saying why it was yanked
 		{name: "pulled", version: "1.0", wantErr: "yanked"},
+		{name: "pulled", version: "1.0", upstream: true, want: "pulled-1.0.tar.gz", fromSource: true, yanked: "broken metadata"},
 		{name: "absent", version: "1.0", wantErr: "404"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ChooseFiles(t.Context(), c, Pinned{Name: tt.name, Version: tt.version})
+			got, err := ChooseFiles(t.Context(), c, Pinned{Name: tt.name, Version: tt.version, Upstream: tt.upstream})
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || !strings.Contains(err.Error(), tt.name) {
 					t.Errorf("ChooseFiles(%s) = %+v, %v; want an error naming it and %q", tt.name, got, err, tt.wantErr)
@@ -100,6 +108,9 @@ func TestChooseFiles(t *testing.T) {
 			}
 			if err != nil || len(got.Files) != 1 || got.Files[0].Name != tt.want || got.Files[0].SHA256 != sum(tt.want) || got.FromSource != tt.fromSource {
 				t.Errorf("ChooseFiles(%s) = %+v, %v; want %s alone, from source %t", tt.name, got, err, tt.want, tt.fromSource)
+			}
+			if got.Yanked != (tt.yanked != "") || got.YankedReason != tt.yanked {
+				t.Errorf("ChooseFiles(%s) = yanked %t, %q; want %q", tt.name, got.Yanked, got.YankedReason, tt.yanked)
 			}
 		})
 	}
@@ -120,6 +131,7 @@ func TestChooseBuildFiles(t *testing.T) {
 			sdist("maturin-1.14.1.tar.gz"),
 		},
 		"musl-only/1.0": {wheel("musl_only-1.0-py3-none-musllinux_1_1_x86_64.whl")},
+		"pulled/2.0":    {func() file { f := wheel("pulled-2.0-py3-none-any.whl"); f.Yanked = true; return f }()},
 	})
 	c := &PyPI{Base: srv.URL, Client: srv.Client()}
 	got, err := ChooseBuildFiles(t.Context(), c, Pinned{Name: "setuptools", Version: "82.0.1"})
@@ -141,6 +153,10 @@ func TestChooseBuildFiles(t *testing.T) {
 	}
 	if _, err = ChooseBuildFiles(t.Context(), c, Pinned{Name: "musl-only", Version: "1.0"}); err == nil || !strings.Contains(err.Error(), "musl-only") {
 		t.Errorf("ChooseBuildFiles(musl-only) = %v, want an error naming it", err)
+	}
+	// A build backend is pins.txt's alone, so a yanked one is refused
+	if _, err = ChooseBuildFiles(t.Context(), c, Pinned{Name: "pulled", Version: "2.0"}); err == nil || !strings.Contains(err.Error(), "pulled 2.0 is yanked") {
+		t.Errorf("ChooseBuildFiles(yanked) = %v, want an error naming it as yanked", err)
 	}
 }
 

@@ -31,7 +31,14 @@ func TestReadArgs(t *testing.T) {
 	if err != nil || got != want {
 		t.Errorf("ReadArgs() = %+v, %v; want %+v", got, err, want)
 	}
+	// Renovate's unrar update empties the checksum, for the tool to fill in
+	emptied := strings.Replace(containerfile, "=f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99", "=", 1)
+	want.UnrarSHA256 = ""
+	if got, err = ReadArgs([]byte(emptied)); err != nil || got != want {
+		t.Errorf("ReadArgs() with UNRAR_SHA256 empty = %+v, %v; want %+v", got, err, want)
+	}
 	for _, tt := range []struct{ name, text, want string }{
+		{"short-sha256", strings.Replace(containerfile, "=f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99", "=f61a1160", 1), "UNRAR_SHA256"},
 		{"no-commit", strings.Replace(containerfile, "ARG SABNZBD_COMMIT=", "ARG SABNZBD_REF=", 1), "SABNZBD_COMMIT"},
 		{"short-commit", strings.Replace(containerfile, "=ffc619947b5ba4e6520e3a0bc70680024e184b2f", "=ffc6199", 1), "SABNZBD_COMMIT"},
 		{"twice", containerfile + "ARG UNRAR_VERSION=7.3.1\n", "UNRAR_VERSION"},

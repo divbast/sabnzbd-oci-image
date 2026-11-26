@@ -44,6 +44,14 @@ func WriteLock(w io.Writer, l Lock) error {
 		if p.FromSource {
 			why += "; built from source"
 		}
+		switch {
+		case p.Yanked && p.YankedReason != "":
+			why += "; yanked on PyPI: " + p.YankedReason
+		case p.Yanked:
+			why += "; yanked on PyPI, with no reason given"
+		}
+		// One comment line, whatever the text: no line pip would read
+		why = strings.Join(strings.Fields(why), " ")
 		fmt.Fprintf(&b, "\n# %s\n%s==%s", why, Normalize(p.Name), p.Version)
 		hashes := make([]string, 0, len(p.Files))
 		for _, f := range p.Files {

@@ -23,7 +23,9 @@
 //   - python/build.lock: the build backends pins.txt names, with the
 //     sha256 of each wheel a build stage may install;
 //   - the Containerfile's UNRAR_SHA256, the checksum of the tarball RARLAB
-//     serves now.
+//     serves now, when it is empty, as Renovate's unrar update leaves it. A
+//     set one is never rewritten: one RARLAB's tarball no longer matches
+//     is an error.
 //
 // Renovate runs it in each pull request that moves one of those pins.
 // With -check it writes nothing, prints a unified diff of each file that
@@ -87,10 +89,13 @@ func run(ctx context.Context, args []string, src pins.Sources, stdout, stderr io
 		return 1
 	}
 	defer func() { _ = root.Close() }() // every write is checked where it is made
-	files, err := pins.Generate(ctx, src, root)
+	files, notes, err := pins.Generate(ctx, src, root)
 	if err != nil {
 		complain(stderr, "%v", err)
 		return 1
+	}
+	for _, n := range notes {
+		complain(stderr, "note: %s", n)
 	}
 	paths := make([]string, 0, len(files))
 	for p := range files {

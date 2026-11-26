@@ -177,8 +177,12 @@ func ParsePins(r io.Reader) ([]Pin, error) {
 }
 
 // Pinned is a package at the one version the image installs, and why
-// that version.
-type Pinned struct{ Name, Version, Why string }
+// that version. Upstream is true for a pin upstream's own list makes
+// with ==, which nothing here may change.
+type Pinned struct {
+	Name, Version, Why string
+	Upstream           bool
+}
 
 // Merge gives each package of reqs, upstream's, its version: upstream's
 // own pin, which nothing in pins overrides, or else the KindUnpinned pin
@@ -205,7 +209,7 @@ func Merge(reqs []Requirement, pins []Pin) ([]Pinned, error) {
 			if pinned {
 				errs = append(errs, fmt.Errorf("%s is pinned by upstream at %s, and upstream's pin stands: remove pins.txt line %d", r.Name, v, p.Line))
 			}
-			out = append(out, Pinned{Name: r.Name, Version: v, Why: "pinned by upstream"})
+			out = append(out, Pinned{Name: r.Name, Version: v, Why: "pinned by upstream", Upstream: true})
 			continue
 		}
 		want := r.Name + r.Specifier
