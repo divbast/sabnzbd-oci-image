@@ -1,52 +1,62 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-// Command divbast-sabnzbd is the template's app, renamed, and the image's PID 1.
+// Command divbast-sabnzbd starts SABnzbd, and is the image's health check
+// and version.
 //
 // Usage:
 //
-//	divbast-sabnzbd serve    serve the page on :8080 and /healthz on :8081
-//	divbast-sabnzbd health   check both, as the HEALTHCHECK does
+//	divbast-sabnzbd serve    write the first settings if /config has none, then become SABnzbd
+//	divbast-sabnzbd health   check SABnzbd answers, and is the version the image was built from
 //	divbast-sabnzbd version  print the version
 //
-// serve logs each request as JSON to stdout, and on SIGTERM or SIGINT
-// stops taking requests, finishes those it has within 5 s, and exits 0:
-// the kernel drops a signal PID 1 does not handle, so without this a stop
-// would wait out the engine's timeout and kill it.
+// serve writes /config/sabnzbd.ini only when /config holds none: SSDP off,
+// the port fixed at 8080, and host_whitelist from SABNZBD_HOST_WHITELIST
+// when that is set. Then it replaces itself with SABnzbd, by execve, so
+// SABnzbd is PID 1, and handles its own signals.
 //
-// health prints nothing when both halves hold, and one "<check>: <reason>"
-// line for each that does not.
+// health prints nothing when SABnzbd answers GET /api?mode=version with
+// the image's version, and one "version: <reason>" line when it does not.
 //
 // Exit codes:
 //
-//	0  served until stopped, healthy, or the version printed
-//	1  a listener failed, or a half of health did not hold
+//	0  healthy, or the version printed
+//	1  the first settings could not be written, SABnzbd could not be
+//	   started, or health did not hold
 //	2  the command line is wrong
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
+	"io"
 	"os"
-	"os/signal"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/divbast/sabnzbd-oci-image/internal/server"
+	"github.com/divbast/sabnzbd-oci-image/internal/probe"
+	"github.com/divbast/sabnzbd-oci-image/internal/starter"
 )
 
-// version is set at build time, with -ldflags "-X main.version=…".
+// version is set at build time, with -ldflags "-X main.version=…": the
+// SABnzbd version the image is built from.
 var version = "dev"
 
-const (
-	appAddr    = ":8080"
-	healthAddr = ":8081"
-	// stopWithin bounds the shutdown a stop asks for.
-	stopWithin = 5 * time.Second
-)
+// configDir is where SABnzbd keeps all its state.
+const configDir = "/config"
+
+// serverArgv is SABnzbd, as PID 1 runs it: from the venv's Python, at
+// optimisation level 2 for the bytecode the build compiled, with its
+// state in /config, on 8080, with no browser, and logging to stdout alone.
+var serverArgv = []string{
+	"/app/venv/bin/python", "-OO", "/app/sabnzbd/SABnzbd.py",
+	"-f", configDir, "-s", "0.0.0.0:8080", "-b", "0", "--disable-file-log",
+}
+
+// within bounds health's one exchange, inside the HEALTHCHECK's timeout.
+const within = 4 * time.Second
 
 func main() {
 	if len(os.Args) != 2 {
@@ -54,14 +64,13 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "serve":
-		if err := serve(); err != nil {
-			fmt.Fprintln(os.Stderr, "divbast-sabnzbd:", err)
-			os.Exit(1)
-		}
+		err := serve(configDir, os.Environ(), syscall.Exec, os.Stdout)
+		complain(os.Stderr, "%v", err)
+		os.Exit(1)
 	case "health":
-		os.Exit(server.Probe(context.Background(), "http://127.0.0.1:8080/", "http://127.0.0.1:8081/healthz", os.Stderr))
+		os.Exit(probe.Probe(context.Background(), probe.Options{Base: "http://127.0.0.1:8080", Version: version, Within: within}, os.Stderr))
 	case "version":
-		fmt.Println(version)
+		fmt.Println("divbast-sabnzbd", version)
 	default:
 		usage()
 	}
@@ -72,34 +81,31 @@ func usage() {
 	os.Exit(2)
 }
 
-func serve() error {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
-
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	servers := []*http.Server{
-		{Addr: appAddr, Handler: server.Logged(server.App(), log), ReadHeaderTimeout: 5 * time.Second},
-		{Addr: healthAddr, Handler: server.Health(), ReadHeaderTimeout: 5 * time.Second},
-	}
-	failed := make(chan error, len(servers))
-	for _, s := range servers {
-		go func() {
-			if err := s.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-				failed <- fmt.Errorf("listening on %s: %w", s.Addr, err)
+// serve writes dir's first settings when it has none, from environ, then
+// has exec replace this process with SABnzbd, with environ unchanged. It
+// returns only when one of them failed, with why.
+func serve(dir string, environ []string, exec func(path string, argv, envv []string) error, stdout io.Writer) error {
+	env := func(key string) string {
+		for _, e := range slices.Backward(environ) {
+			if k, v, ok := strings.Cut(e, "="); ok && k == key {
+				return v
 			}
-		}()
+		}
+		return ""
 	}
-	log.Info("serving", slog.String("app", appAddr), slog.String("health", healthAddr), slog.String("version", version))
+	wrote, err := starter.Ensure(dir, env)
+	if err != nil {
+		return err
+	}
+	if wrote {
+		// A failed write to stdout leaves nowhere better to report it.
+		_, _ = fmt.Fprintf(stdout, "divbast-sabnzbd: wrote the first settings to %s/%s: SSDP off, port 8080 fixed\n", dir, starter.File)
+	}
+	return fmt.Errorf("could not start SABnzbd, %s: %w", serverArgv[0], exec(serverArgv[0], serverArgv, environ))
+}
 
-	var err error
-	select {
-	case err = <-failed:
-	case <-ctx.Done():
-	}
-	shutdown, cancel := context.WithTimeout(context.Background(), stopWithin)
-	defer cancel()
-	for _, s := range servers {
-		err = errors.Join(err, s.Shutdown(shutdown))
-	}
-	return err
+// complain writes one line to stderr, after the command's name.
+func complain(stderr io.Writer, format string, args ...any) {
+	// A failed write to stderr leaves nowhere better to report it.
+	_, _ = fmt.Fprintln(stderr, "divbast-sabnzbd:", fmt.Sprintf(format, args...))
 }
