@@ -8,9 +8,9 @@ that runs at zero Linux capabilities, with no new privileges, on a
 read-only root filesystem as uid 65532, with no shell, on Docker Hardened
 Images' Python. Made from divbast/oci-image-template's Go core.
 
-Its publish job rehearses until the first publish: nothing reaches
-ghcr.io. The divbast organisation's settings, rulesets and Renovate wiring
-live in `divbast/infra`.
+It publishes to `ghcr.io/divbast/sabnzbd`, tagged with SABnzbd's version
+and `latest`. The divbast organisation's settings, rulesets and Renovate
+wiring live in `divbast/infra`.
 
 ## CRITICAL: Git Commit Message Format
 
