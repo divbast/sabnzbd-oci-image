@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-License-Identifier: GPL-3.0-only
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
 # The daily stall check, through divbast/ci's stall.yml: a Renovate pull
@@ -11,9 +11,9 @@ name: stall
 on:
   schedule:
     # Midway between two daily slots, which GitHub starts hours after
-    # build.yml's 19:07 UTC. Six minutes after the LibreSpeed image's stall
+    # build.yml's 21:27 UTC. Twelve minutes after the Radarr image's stall
     # check, so the two never start together.
-    - cron: '35 12 * * *'
+    - cron: '35 13 * * *'
   workflow_dispatch:
 
 permissions: {}

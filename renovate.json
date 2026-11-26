@@ -1,4 +1,123 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>divbast/renovate-config", "github>divbast/renovate-config:app"]
+  "extends": ["github>divbast/renovate-config", "github>divbast/renovate-config:app"],
+  "customDatasources": {
+    "rarlab": {
+      "description": "unrar's source tarballs, as RARLAB's own download page for extras links them: RARLAB publishes no feed and no checksums, and the page links the newest tarball, betas included. Each link is a release; extractVersion below keeps the unrarsrc-<n>.tar.gz ones and their counter-style names.",
+      "defaultRegistryUrlTemplate": "https://www.rarlab.com/rar_add.htm",
+      "format": "html"
+    }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "ARG SABNZBD_VERSION and the ARG SABNZBD_COMMIT beneath it, captured together so one PR moves both, from SABnzbd's GitHub releases, pre-releases included: the image follows every tag on SABnzbd's develop branch. The digest is the commit the tag names, which the fetch stage checks out, checks the signature of, and asserts the tag still names. The versioning reads SABnzbd's own tags, 5.2.0, 5.2.0RC2, 5.3.0Beta1 or 5.3.0Alpha1, as a release and a pre-release, so 5.2.0RC2 sorts below 5.2.0. The two ARGs must stay adjacent and in this order.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG SABNZBD_VERSION=(?<currentValue>\\S+)\\nARG SABNZBD_COMMIT=(?<currentDigest>[0-9a-f]{40})"],
+      "depNameTemplate": "sabnzbd/sabnzbd",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?<prerelease>(Alpha|Beta|RC)\\d+)?$",
+      "autoReplaceStringTemplate": "ARG SABNZBD_VERSION={{{newValue}}}\nARG SABNZBD_COMMIT={{{newDigest}}}"
+    },
+    {
+      "customType": "regex",
+      "description": "ARG UNRAR_VERSION, the name of the unrar tarball RARLAB links, from the rarlab datasource above, and the ARG UNRAR_SHA256 beneath it, which the update empties: go run ./cmd/divbast-pins fills an empty one in, in the same PR, from the tarball RARLAB serves then, and never rewrites a set one, so a different file under the same name fails every later run instead of being taken. The two ARGs must stay adjacent and in this order.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG UNRAR_VERSION=(?<currentValue>\\S+)\\nARG UNRAR_SHA256=[0-9a-f]*\\n"],
+      "depNameTemplate": "unrar",
+      "datasourceTemplate": "custom.rarlab",
+      "versioningTemplate": "loose",
+      "autoReplaceStringTemplate": "ARG UNRAR_VERSION={{{newValue}}}\nARG UNRAR_SHA256=\n"
+    },
+    {
+      "customType": "regex",
+      "description": "ARG SEVENZIP_VERSION and the ARG SEVENZIP_COMMIT beneath it, captured together so one PR moves both, from 7-Zip's GitHub releases. The digest is the commit the tag names, which the 7zz stage checks out and asserts the tag still names. 7-Zip numbers its releases year.month-like, 26.06, which semver cannot read. The two ARGs must stay adjacent and in this order.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG SEVENZIP_VERSION=(?<currentValue>\\S+)\\nARG SEVENZIP_COMMIT=(?<currentDigest>[0-9a-f]{40})"],
+      "depNameTemplate": "ip7z/7zip",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)$",
+      "autoReplaceStringTemplate": "ARG SEVENZIP_VERSION={{{newValue}}}\nARG SEVENZIP_COMMIT={{{newDigest}}}"
+    },
+    {
+      "customType": "regex",
+      "description": "Each package==version line of python/pins.txt, from PyPI: what SABnzbd's requirements.txt leaves unpinned, what a pinned package needs that it leaves out, and the build backends the source builds need. go run ./cmd/divbast-pins regenerates the locks from them in the same PR. Renovate's own Python managers stay off python/, by the app preset.",
+      "managerFilePatterns": ["/^python/pins\\.txt$/"],
+      "matchStrings": ["(?<depName>[A-Za-z0-9][A-Za-z0-9._-]*)==(?<currentValue>\\S+)"],
+      "datasourceTemplate": "pypi"
+    },
+    {
+      "customType": "regex",
+      "description": "The packages the toolchain stage installs, each pinned name=version on a line of its own, to Docker Hardened Images' own build: from DHI's own Debian repository, the one the stage's apt reads alone, whose amd64 and arm64 indexes carry the same versions. Most end +dhiN; DHI's own packages, such as rustc and cargo, do not. DHI deletes a superseded build, so a pin left behind fails the build until this moves it.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": [" (?<depName>[a-z0-9][a-z0-9.+-]*)=(?<currentValue>[0-9][^\\s=]*) \\\\"],
+      "datasourceTemplate": "deb",
+      "registryUrlTemplate": "https://dhi.io/deb/debian/main?suite=trixie&components=main&binaryArch=amd64"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "SABnzbd's releases and pre-releases merge once every check passes: the image follows every tag on develop, and the acceptance suite is what holds one back. Each moves the locks with it, regenerated from its requirements.txt by the repository's own command, which ci's Renovate allows.",
+      "matchDepNames": ["sabnzbd/sabnzbd"],
+      "labels": ["sabnzbd"],
+      "commitMessagePrefix": "sabnzbd:",
+      "ignoreUnstable": false,
+      "automerge": true,
+      "postUpgradeTasks": {
+        "commands": ["go run ./cmd/divbast-pins"],
+        "fileFilters": ["python/**", "Containerfile"],
+        "executionMode": "branch",
+        "installTools": { "golang": {} }
+      }
+    },
+    {
+      "description": "unrar's tarballs, betas included, which RARLAB's page links, newest first. Each merges once green, on the checksum of what RARLAB served when the PR was made, which the repository's own command writes into the UNRAR_SHA256 the update emptied.",
+      "matchDepNames": ["unrar"],
+      "extractVersion": "unrarsrc-(?<version>[0-9.]+)\\.tar\\.gz$",
+      "ignoreUnstable": false,
+      "labels": ["unrar"],
+      "commitMessagePrefix": "build:",
+      "automerge": true,
+      "postUpgradeTasks": {
+        "commands": ["go run ./cmd/divbast-pins"],
+        "fileFilters": ["Containerfile"],
+        "executionMode": "branch",
+        "installTools": { "golang": {} }
+      }
+    },
+    {
+      "description": "7-Zip's releases merge once every check passes: the 7zz stage's checks and the acceptance suite's unpacking are what hold one back.",
+      "matchDepNames": ["ip7z/7zip"],
+      "labels": ["7zip"],
+      "commitMessagePrefix": "build:",
+      "automerge": true
+    },
+    {
+      "description": "A pin in python/pins.txt moves the locks with it, regenerated by the repository's own command, which ci's Renovate allows.",
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["pypi"],
+      "labels": ["python"],
+      "postUpgradeTasks": {
+        "commands": ["go run ./cmd/divbast-pins"],
+        "fileFilters": ["python/**"],
+        "executionMode": "branch",
+        "installTools": { "golang": {} }
+      }
+    },
+    {
+      "description": "httptools 0.9.0, which SABnzbd pins, builds only with setuptools 82.0.1 or older, and the build holds every source build to what its pyproject.toml asks for, so a newer setuptools would fail the image. Lift this when SABnzbd's httptools takes a newer one.",
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["pypi"],
+      "matchPackageNames": ["setuptools"],
+      "allowedVersions": "<=82.0.1"
+    },
+    {
+      "description": "The toolchain stage's packages move together, in one pull request, and merge once every check passes.",
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["deb"],
+      "groupName": "DHI build packages",
+      "commitMessagePrefix": "build:",
+      "automerge": true
+    }
+  ]
 }

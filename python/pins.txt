@@ -1,0 +1,32 @@
+# upstream leaves it unpinned: cryptography>=3.0
+cryptography==50.0.2
+
+# needed by python-dateutil 3.0.0, which requires it, though upstream's list leaves it out
+tzdata==2026.6
+
+# builds CT3, cffi, cryptography, httptools, PyYAML and ujson from source; httptools 0.9.0 takes setuptools 82.0.1 at most
+setuptools==82.0.1
+
+# builds ujson from source
+setuptools-scm==10.3.4
+
+# builds ujson from source, for setuptools-scm
+vcs-versioning==2.6.0
+
+# builds sabctools from source
+scikit-build-core==1.1.2
+
+# builds sabctools and ujson from source, for scikit-build-core and setuptools-scm
+packaging==26.4
+
+# builds sabctools from source, for scikit-build-core
+pathspec==1.1.1
+
+# builds cryptography and orjson from source
+maturin==1.16.0
+
+# builds PyYAML from source
+cython==3.3.2
+
+# builds sabctools from source, for scikit-build-core, since Docker Hardened Images have no cmake
+cmake==4.4.5
