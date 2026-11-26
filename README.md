@@ -9,9 +9,8 @@ read-only root filesystem as a non-root user, with no shell in it. It is
 built from SABnzbd's source, and goes through divbast/ci's shared pipeline:
 lint, a build for amd64 and arm64, the confinement contract and its own
 acceptance suite under Docker and rootless Podman, an image scan, and a
-daily publish to `ghcr.io/divbast/sabnzbd`. Until the first publish, the
-publish job rehearses, and nothing reaches ghcr.io. [Publishing](#publishing)
-says when it publishes and under which tags.
+daily publish to `ghcr.io/divbast/sabnzbd`. [Publishing](#publishing) says
+when it publishes and under which tags.
 
 The image follows every release SABnzbd tags on its develop branch:
 pre-releases, such as `5.2.0RC2` or `5.3.0Beta1`, as well as stable ones.
@@ -449,10 +448,16 @@ the last image.
 
 ### Publishing
 
-Until the image's first publish, the publish job rehearses into a
-registry of its own, and nothing reaches ghcr.io. Once publishing, each
-image is tagged with SABnzbd's version and `latest`, for amd64 and arm64,
-with an attestation of its build.
+A merge never publishes. The daily slot publishes `main` when `main` moved
+since the commit the published `:latest` was built from, and the button, a
+manual run of `build` from `main`, publishes at once.
+
+Its publish job calls divbast/ci's `app-publish.yml` with `image:
+ghcr.io/divbast/sabnzbd`. A publish pushes an index of the amd64 and arm64
+images, attests it, verifies the attestation, and only then tags it twice:
+with SABnzbd's version, the Containerfile's `SABNZBD_VERSION`, and with
+`latest`. It ends by checking, as an anonymous client, that both tags are
+the attested index.
 
 ### The scan
 
