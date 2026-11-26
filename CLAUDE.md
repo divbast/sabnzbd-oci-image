@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <!-- SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee> -->
 
 # oci-image-template
@@ -130,7 +130,7 @@ breaking change.
   main, since GitHub re-runs no checks when a base moves and a green check
   on a stale base proves nothing. **It merges its own PRs** once every
   check passes, with a squash, while the repository variable
-  `OCI_IMAGE_TEMPLATE_AUTOMERGE` is `enabled`; any other value stops
+  `SABNZBD_AUTOMERGE` is `enabled`; any other value stops
   merging from the next run. A new major of divbast/ci, a raise of
   `go.mod`'s `go` line, and a .NET major wait for approval on the
   Dependency Dashboard first. **A merge never publishes.** `build.yml`'s
@@ -319,7 +319,7 @@ target framework follows its SDK, and no upstream waits on it.
   manager and rule there
 - **divbast/infra** holds the org's settings, this repository's rulesets
   and its template flag, the `divbast-renovate` App, the `renovate`
-  environment and `OCI_IMAGE_TEMPLATE_AUTOMERGE`
+  environment and `SABNZBD_AUTOMERGE`
 
 ## Key commands
 
@@ -419,7 +419,7 @@ target framework follows its SDK, and no upstream waits on it.
   GitHub not answering fails the scan rather than waving it through. A
   local `just scan` never asks GitHub, so a refusal there is advisory,
   with a warning that only CI can tell what it means
-- REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**.
+- REUSE-compliant SPDX headers on every file; licence is **GPL-3.0-only**.
   The image's licences label names only that, because the image ships
   nothing else of its own; an app that ships an upstream's files adds the
   upstream's licence to the label, and leaves which file carries which

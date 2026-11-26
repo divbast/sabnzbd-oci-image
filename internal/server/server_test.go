@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-2-Clause
+// SPDX-License-Identifier: GPL-3.0-only
 // SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
 package server_test
@@ -11,7 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/divbast/oci-image-template/internal/server"
+	"github.com/divbast/sabnzbd-oci-image/internal/server"
 )
 
 func TestApp(t *testing.T) {

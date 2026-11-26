@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: BSD-2-Clause -->
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
 <!-- SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee> -->
 
 # oci-image-template
@@ -209,21 +209,21 @@ are:
   move by pull requests of their own.
 
 Renovate merges its own pull requests once every check on one has passed,
-while the repository variable `OCI_IMAGE_TEMPLATE_AUTOMERGE` is `enabled`.
+while the repository variable `SABNZBD_AUTOMERGE` is `enabled`.
 Three kinds first wait for someone to approve them on the Dependency
 Dashboard: a new major version of divbast/ci, a raise of `go.mod`'s `go`
 line, and a .NET major. Any other value of the variable, or none, stops
 merging from the next run, and Renovate goes on opening and rebasing pull
 requests for a person to merge:
 
-    gh variable set OCI_IMAGE_TEMPLATE_AUTOMERGE --body disabled
+    gh variable set SABNZBD_AUTOMERGE --body disabled
 
 After a merge it rebases every open update the merge left behind, so each
 is tested again against the new `main` before it merges. It merges with a
 squash, which GitHub signs, because `main` accepts only signed commits.
 
 The App, the `renovate` environment holding its key,
-`OCI_IMAGE_TEMPLATE_AUTOMERGE` and this repository's rulesets are all
+`SABNZBD_AUTOMERGE` and this repository's rulesets are all
 managed from [divbast/infra](https://github.com/divbast/infra).
 
 ## Making a new app
@@ -336,7 +336,7 @@ renamed for you. Then, in this order:
    the organisation runs at most 20 jobs at once. `renovate.yml`'s cron can
    stay as it is, since divbast's repositories share it.
 3. **The kill switch.** In `renovate.yml`, replace
-   `OCI_IMAGE_TEMPLATE_AUTOMERGE`, in the job and in the comment above it,
+   `SABNZBD_AUTOMERGE`, in the job and in the comment above it,
    with the variable the app's entry in divbast/infra names, such as
    `LIBRESPEED_AUTOMERGE`. Do the same in this README and `CLAUDE.md`.
 4. **The upstream pin.** Pin what the app is built from in the
@@ -459,6 +459,6 @@ This project was developed with significant LLM involvement. Each git commit con
 
 Copyright 2026 Aryan Ameri.
 
-[BSD-2-Clause](LICENSES/BSD-2-Clause.txt)
+[GPL-3.0-only](LICENSES/GPL-3.0-only.txt)
 
 This project is [REUSE](https://reuse.software/) compliant.

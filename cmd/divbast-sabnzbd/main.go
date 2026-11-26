@@ -1,13 +1,13 @@
-// SPDX-License-Identifier: BSD-2-Clause
+// SPDX-License-Identifier: GPL-3.0-only
 // SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-// Command template is the template's app, and the image's PID 1.
+// Command divbast-sabnzbd is the template's app, renamed, and the image's PID 1.
 //
 // Usage:
 //
-//	template serve    serve the page on :8080 and /healthz on :8081
-//	template health   check both, as the HEALTHCHECK does
-//	template version  print the version
+//	divbast-sabnzbd serve    serve the page on :8080 and /healthz on :8081
+//	divbast-sabnzbd health   check both, as the HEALTHCHECK does
+//	divbast-sabnzbd version  print the version
 //
 // serve logs each request as JSON to stdout, and on SIGTERM or SIGINT
 // stops taking requests, finishes those it has within 5 s, and exits 0:
@@ -35,7 +35,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/divbast/oci-image-template/internal/server"
+	"github.com/divbast/sabnzbd-oci-image/internal/server"
 )
 
 // version is set at build time, with -ldflags "-X main.version=…".
@@ -55,7 +55,7 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		if err := serve(); err != nil {
-			fmt.Fprintln(os.Stderr, "template:", err)
+			fmt.Fprintln(os.Stderr, "divbast-sabnzbd:", err)
 			os.Exit(1)
 		}
 	case "health":
@@ -68,7 +68,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: template serve|health|version")
+	fmt.Fprintln(os.Stderr, "usage: divbast-sabnzbd serve|health|version")
 	os.Exit(2)
 }
 

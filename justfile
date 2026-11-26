@@ -1,10 +1,10 @@
-# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-License-Identifier: GPL-3.0-only
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
 set shell := ["mise", "exec", "--", "bash", "-euo", "pipefail", "-c"]
 
 # The image's name, without its registry: everything below is named from it
-APP := "oci-image-template"
+APP := "sabnzbd"
 
 # What divbast/ci's app recipes act on: the engine, the image the build
 # writes and the acceptance suite runs, where archive writes it and scan
