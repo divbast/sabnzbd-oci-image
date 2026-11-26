@@ -50,11 +50,14 @@ const configDir = "/config"
 // serverArgv is SABnzbd, as PID 1 runs it: from the venv's Python, at
 // optimisation level 2 for the bytecode the build compiled, with its
 // state in /config, on 8080, with no browser, and logging to stdout alone.
-// It listens on [::], which takes IPv4 too, as IPv4-mapped addresses that
+// It listens on ::, which takes IPv4 too, as IPv4-mapped addresses that
 // SABnzbd reads as IPv4, so an IPv6-only network reaches it; a kernel with
 // no IPv6 at all, ipv6, false, cannot open that socket, and gets 0.0.0.0.
+// The host is written without brackets: SABnzbd saves it in its settings
+// only if it is a plain address, and a restart from its web UI drops -s
+// and listens where the settings say.
 func serverArgv(ipv6 bool) []string {
-	listen := "[::]:8080"
+	listen := ":::8080"
 	if !ipv6 {
 		listen = "0.0.0.0:8080"
 	}

@@ -62,7 +62,7 @@ func TestServerArgv(t *testing.T) {
 	for _, tt := range []struct {
 		ipv6   bool
 		listen string
-	}{{true, "[::]:8080"}, {false, "0.0.0.0:8080"}} {
+	}{{true, ":::8080"}, {false, "0.0.0.0:8080"}} {
 		want := []string{"/app/venv/bin/python", "-OO", "/app/sabnzbd/SABnzbd.py", "-f", "/config", "-s", tt.listen, "-b", "0", "--disable-file-log"}
 		if got := serverArgv(tt.ipv6); !slices.Equal(got, want) {
 			t.Errorf("serverArgv(%t) = %q, want %q", tt.ipv6, got, want)
