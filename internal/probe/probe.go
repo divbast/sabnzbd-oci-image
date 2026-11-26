@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
 // Package probe is the image's health check: SABnzbd answers its version,
-// and it is the version the image was built from.
+// it is the version the image was built from, and it listens on every
+// address, so the container's port reaches it.
 package probe
 
 import (
@@ -24,16 +25,28 @@ type Options struct {
 	Base    string
 	Version string
 	Within  time.Duration
+	// Port, when not 0, is the port SABnzbd must listen on on every
+	// address, as the network namespace that Proc, /proc, describes.
+	Port int
+	Proc string
 }
 
 // Probe asks SABnzbd for GET /api?mode=version, which needs no API key, and
-// returns 0 when it answers 200 with exactly o.Version, printing nothing.
-// Otherwise it prints one "version: <reason>" line to stderr, which is the
-// only record of why, and returns 1.
+// returns 0 when it answers 200 with exactly o.Version and, with o.Port
+// set, listens on that port on every address, printing nothing. Otherwise
+// it prints one "version: <reason>" or "listen: <reason>" line to stderr,
+// which is the only record of why, and returns 1.
 func Probe(ctx context.Context, o Options, stderr io.Writer) int {
+	// A failed write to stderr leaves nowhere better to report it.
 	if err := check(ctx, o); err != nil {
-		// A failed write to stderr leaves nowhere better to report it.
 		_, _ = fmt.Fprintln(stderr, "version:", err)
+		return 1
+	}
+	if o.Port == 0 {
+		return 0
+	}
+	if err := listening(o.Proc, o.Port); err != nil {
+		_, _ = fmt.Fprintln(stderr, "listen:", err)
 		return 1
 	}
 	return 0

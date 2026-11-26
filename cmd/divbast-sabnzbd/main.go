@@ -16,7 +16,8 @@
 // SABnzbd is PID 1, and handles its own signals.
 //
 // health prints nothing when SABnzbd answers GET /api?mode=version with
-// the image's version, and one "version: <reason>" line when it does not.
+// the image's version and listens on 8080 on every address, and one
+// "version: <reason>" or "listen: <reason>" line when it does not.
 //
 // Exit codes:
 //
@@ -90,7 +91,9 @@ func main() {
 		complain(os.Stderr, "%v", err)
 		os.Exit(1)
 	case "health":
-		os.Exit(probe.Probe(context.Background(), probe.Options{Base: "http://127.0.0.1:8080", Version: version, Within: within}, os.Stderr))
+		os.Exit(probe.Probe(context.Background(), probe.Options{
+			Base: "http://127.0.0.1:8080", Version: version, Within: within, Port: 8080, Proc: "/proc",
+		}, os.Stderr))
 	case "version":
 		fmt.Println("divbast-sabnzbd", version)
 	default:
