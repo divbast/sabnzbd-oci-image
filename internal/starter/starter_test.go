@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -184,5 +185,64 @@ func TestWritable(t *testing.T) {
 	}
 	if data, err := os.ReadFile(ini); err != nil || string(data) != "[misc]\n" { //nolint:gosec // G304: the test's own temporary file
 		t.Errorf("%s holds %q, %v after Writable(); want it unchanged", File, data, err)
+	}
+}
+
+// noLinks is a filesystem with no hard links, as SMB shares and some
+// network volumes are: link fails as Linux's link(2) does there.
+func noLinks(errno syscall.Errno) func(string, string) error {
+	return func(oldname, newname string) error {
+		return &os.LinkError{Op: "link", Old: oldname, New: newname, Err: errno}
+	}
+}
+
+// TestEnsureWithoutHardLinks is /config on a filesystem that refuses hard
+// links: the first settings are written all the same, created where no
+// file is, and only there.
+func TestEnsureWithoutHardLinks(t *testing.T) {
+	t.Parallel()
+	const want = "[misc]\nenable_broadcast = 0\nfixed_ports = 1\nhost_whitelist = sab\n"
+	for _, errno := range []syscall.Errno{syscall.EPERM, syscall.EOPNOTSUPP} {
+		t.Run(errno.Error(), func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			wrote, err := ensure(dir, env("sab"), noLinks(errno))
+			if err != nil || !wrote {
+				t.Fatalf("ensure() = %t, %v; want it written", wrote, err)
+			}
+			path := filepath.Join(dir, File)
+			if data, err := os.ReadFile(path); err != nil || string(data) != want { //nolint:gosec // G304: the test's own temporary file
+				t.Errorf("%s =\n%s, %v\nwant\n%s", File, data, err, want)
+			}
+			if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
+				t.Errorf("%s's mode = %v, %v; want 0600", File, fi.Mode().Perm(), err)
+			}
+			if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+				t.Errorf("the directory holds %d entries, want %s alone", len(entries), File)
+			}
+		})
+	}
+	// A file that appears while the first settings are written is theirs
+	dir := t.TempDir()
+	const theirs = "[misc]\nport = 8085\n"
+	appears := func(oldname, newname string) error {
+		if err := os.WriteFile(newname, []byte(theirs), 0o600); err != nil {
+			return err
+		}
+		return noLinks(syscall.EPERM)(oldname, newname)
+	}
+	if wrote, err := ensure(dir, env(""), appears); err != nil || wrote {
+		t.Errorf("ensure() as a file appears = %t, %v; want false, nil", wrote, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, File)); err != nil || string(data) != theirs { //nolint:gosec // G304: the test's own temporary file
+		t.Errorf("%s = %q, %v; want the file that appeared, unchanged", File, data, err)
+	}
+	// Any other failure of the link is an error, and writes nothing
+	dir = t.TempDir()
+	if wrote, err := ensure(dir, env(""), noLinks(syscall.EIO)); err == nil || wrote {
+		t.Errorf("ensure() with link failing EIO = %t, %v; want an error", wrote, err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("the directory holds %d entries after a failed link, want none", len(entries))
 	}
 }

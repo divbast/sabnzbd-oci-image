@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 // File is SABnzbd's settings file, in its config directory.
@@ -98,8 +99,15 @@ func Starter(whitelist []string) string {
 // unchanged, whatever it holds and whoever may read it. The file is
 // written to a temporary file in dir, mode 0600, and linked into place,
 // so it never overwrites one that appeared meanwhile; it is then left as
-// it is. A bad whitelist, or a dir that cannot be written, writes nothing.
-func Ensure(dir string, env func(string) string) (wrote bool, err error) {
+// it is. On a filesystem with no hard links, such as an SMB share, it is
+// created in place instead, only where no file is. A bad whitelist, or a
+// dir that cannot be written, writes nothing.
+func Ensure(dir string, env func(string) string) (bool, error) {
+	return ensure(dir, env, os.Link)
+}
+
+// ensure is Ensure, putting the written file in place with link.
+func ensure(dir string, env func(string) string, link func(oldname, newname string) error) (wrote bool, err error) {
 	path := filepath.Join(dir, File)
 	if _, err = os.Lstat(path); err == nil {
 		return false, nil
@@ -119,7 +127,8 @@ func Ensure(dir string, env func(string) string) (wrote bool, err error) {
 			err = errors.Join(err, rerr)
 		}
 	}()
-	_, err = tmp.WriteString(Starter(whitelist))
+	text := Starter(whitelist)
+	_, err = tmp.WriteString(text)
 	if err == nil {
 		err = tmp.Sync()
 	}
@@ -127,12 +136,40 @@ func Ensure(dir string, env func(string) string) (wrote bool, err error) {
 	if err != nil {
 		return false, fmt.Errorf("write %s: %w", tmp.Name(), err)
 	}
-	if err = os.Link(tmp.Name(), path); errors.Is(err, fs.ErrExist) {
+	err = link(tmp.Name(), path)
+	if noHardLinks(err) {
+		err = create(path, text)
+	}
+	if errors.Is(err, fs.ErrExist) {
 		return false, nil
 	} else if err != nil {
 		return false, fmt.Errorf("write %s: %w", path, err)
 	}
 	return true, syncDir(dir)
+}
+
+// noHardLinks reports whether err is link(2) failing because the
+// filesystem makes no hard links: EPERM, as Linux says for one that cannot,
+// or EOPNOTSUPP, as SMB and some network filesystems say.
+func noHardLinks(err error) bool {
+	return errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EOPNOTSUPP)
+}
+
+// create writes text to path, mode 0600, only if no file is there, and
+// removes what it created if the write fails, so no partial file is left.
+func create(path, text string) (err error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: the settings file in the config directory the image names
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString(text)
+	if err == nil {
+		err = f.Sync()
+	}
+	if err = errors.Join(err, f.Close()); err != nil {
+		return errors.Join(err, os.Remove(path))
+	}
+	return nil
 }
 
 // Writable returns nil when the running user can write dir, and the
