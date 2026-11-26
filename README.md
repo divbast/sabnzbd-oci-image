@@ -64,12 +64,12 @@ SABnzbd is never patched.
 | User | uid/gid 65532 (`nonroot`) |
 | Port | 8080 (the web UI and the API), on IPv4 and IPv6, and nothing else listens |
 | tmpfs required | `/tmp`, which nothing can run from (`--tmpfs /tmp:size=128m,noexec,nosuid,nodev`); see [`/tmp`](#tmp) |
-| Volume | `/config`, which you mount, owned by 65532; and your [download folders](#download-folders) |
+| Volume | `/config`, which you mount, owned by 65532; and your [downloads](#downloads-and-hardlinks) |
 | Processes | one: SABnzbd, as PID 1, which runs `unrar` and `7zz` as it unpacks |
 | Shell in image | none |
 | Package manager | none |
 | Outbound network | your news servers, and whatever you configure; SABnzbd's [release check](#release-check) |
-| Healthy | the shipped probe: `GET /api?mode=version` answers this image's version |
+| Healthy | the shipped probe: `GET /api?mode=version` answers this image's version, and SABnzbd listens on 8080 on every address |
 
 ## Running
 
@@ -88,7 +88,7 @@ podman run -d --name sabnzbd \
   --user 65532:65532 \
   --tmpfs /tmp:size=128m,noexec,nosuid,nodev \
   -v sabnzbd-config:/config \
-  -v /srv/downloads:/downloads:U \
+  -v /srv/data:/data \
   -p 127.0.0.1:8080:8080 \
   --health-cmd '["/usr/local/bin/divbast-sabnzbd","health"]' \
   ghcr.io/divbast/sabnzbd:latest
@@ -97,8 +97,9 @@ podman run -d --name sabnzbd \
 `--read-only-tmpfs=false` and `--health-cmd` are Podman's alone. Without
 the first, Podman mounts writable tmpfs of its own at `/run`, `/var/tmp`
 and elsewhere beside the read-only root; without the second, it never
-runs the image's health check, as [Health](#health) says. Under rootless
-Podman, `:U` gives a bind mount to the container's user for you.
+runs the image's health check, as [Health](#health) says. `/srv/data`,
+which SABnzbd shares with Sonarr, Radarr or Lidarr, must be writable by
+65532, as [Downloads and hardlinks](#downloads-and-hardlinks) says.
 
 As a Quadlet, in `~/.config/containers/systemd/sabnzbd.container`:
 
@@ -113,7 +114,7 @@ ReadOnly=true
 ReadOnlyTmpfs=false
 Tmpfs=/tmp:size=128m,noexec,nosuid,nodev
 Volume=sabnzbd-config:/config
-Volume=/srv/downloads:/downloads:U
+Volume=/srv/data:/data
 PublishPort=127.0.0.1:8080:8080
 HealthCmd=["/usr/local/bin/divbast-sabnzbd","health"]
 
@@ -123,9 +124,8 @@ WantedBy=default.target
 
 ### Docker and Compose
 
-Docker takes the Podman command without `--read-only-tmpfs=false`,
-`--health-cmd` and `:U`, and runs the image's `HEALTHCHECK` itself. With
-Compose:
+Docker takes the Podman command without `--read-only-tmpfs=false` and
+`--health-cmd`, and runs the image's `HEALTHCHECK` itself. With Compose:
 
 ```yaml
 services:
@@ -135,19 +135,25 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    environment:
+      SABNZBD_HOST_WHITELIST: sabnzbd
     tmpfs:
       - /tmp:size=128m,noexec,nosuid,nodev
     volumes:
       - sabnzbd-config:/config
-      - /srv/downloads:/downloads
+      - /srv/data:/data
     ports:
       - "127.0.0.1:8080:8080"
 volumes:
   sabnzbd-config:
 ```
 
-A bind mount such as `/srv/downloads` must be writable by 65532:
-`chown -R 65532:65532 /srv/downloads` as root.
+`SABNZBD_HOST_WHITELIST: sabnzbd` lets Sonarr, Radarr or Lidarr on the
+same Compose network reach SABnzbd at `http://sabnzbd:8080`: until a
+login is set, SABnzbd refuses a name it does not know, as
+[Hostnames and access](#hostnames-and-access) says. A bind mount such as
+`/srv/data` must be writable by 65532: `chown -R 65532:65532 /srv/data`
+as root.
 
 ### Kubernetes
 
@@ -187,7 +193,7 @@ spec:
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: config, mountPath: /config}
-            - {name: downloads, mountPath: /downloads}
+            - {name: data, mountPath: /data}
             - {name: tmp, mountPath: /tmp}
           startupProbe:
             httpGet:
@@ -204,8 +210,8 @@ spec:
       volumes:
         - name: config
           persistentVolumeClaim: {claimName: sabnzbd-config}
-        - name: downloads
-          persistentVolumeClaim: {claimName: downloads}
+        - name: data
+          persistentVolumeClaim: {claimName: data}
         - name: tmp
           emptyDir: {medium: Memory, sizeLimit: 128Mi}
 ---
@@ -227,8 +233,9 @@ spec:
 - `SABNZBD_HOST_WHITELIST` names the Service's short name and the Ingress
   host; names under `*.local`, such as `sabnzbd.media.svc.cluster.local`,
   are always let in, as [Hostnames and access](#hostnames-and-access) says.
-- A cluster whose pod network is in `100.64.0.0/10` must add that range to
-  SABnzbd's local ranges, since SABnzbd counts it as outside: see
+- A cluster whose pod network is in `100.64.0.0/10` must list that range,
+  with every other range its clients use, in SABnzbd's local ranges, since
+  SABnzbd counts it as outside: see
   [Hostnames and access](#hostnames-and-access).
 
 ### First start
@@ -236,15 +243,16 @@ spec:
 SABnzbd serves its web UI and API on 8080. On an empty `/config`, the
 image writes SABnzbd's first settings, then starts SABnzbd, and the first
 visit to the web UI opens SABnzbd's setup wizard. **SABnzbd has no login
-until you set one** in Config, General, Security. Until then, SABnzbd
-answers only clients on your local network (loopback and private
-addresses) and refuses the rest, and it checks the name a browser asked
-for. The commands above publish the port on the host's loopback alone:
+until you set one** in Config, General, Security. It answers only clients
+on your local network (loopback and private addresses), and refuses the
+rest until Config, General, "External internet access" lets them in;
+until a login is set, it also checks the name a browser asked for. The
+commands above publish the port on the host's loopback alone:
 open `http://127.0.0.1:8080` there first, set a username and a password,
 and only then publish the port beyond the host, or put SABnzbd behind your
 reverse proxy.
 
-A stop (SIGTERM) ends SABnzbd within a second, with exit 0. SABnzbd's own
+A stop (SIGTERM) ends an idle SABnzbd within a second, with exit 0. SABnzbd's own
 Restart, in its web UI, happens inside the container, which keeps
 running; see [Restart](#restart).
 
@@ -258,9 +266,8 @@ folders, its downloads under `/config/Downloads`.
 
 - A `/config` that 65532 cannot write, such as a bind mount root made, or
   a directory another image left owned by its own user, stops the start
-  at once, exit 1, with a line naming the path:
-  `SABnzbd cannot write /config: give it, and everything in it, to uid 65532 …`.
-  Give the directory, and everything in it, to 65532 instead of running
+  at once, exit 1, with a line naming `/config` and uid 65532. Give the
+  directory, and everything in it, to 65532 instead of running
   the image as root: `chown -R 65532:65532 <dir>` as root, or under
   rootless Podman `podman unshare chown -R 65532:65532 <dir>`. For a
   Podman bind mount, `:U` does the same at start: `-v ./config:/config:U`.
@@ -290,11 +297,12 @@ settings below apply to a new `/config` only. SABnzbd still listens on
 ### `/tmp`
 
 SABnzbd stages each NZB you upload in `/tmp`, twice over while it reads
-it, and nothing else there. 128 MiB takes uploads of NZB files up to
-50 MB; a larger one is refused with SABnzbd's own error, and the
-container stays healthy. An upload that fails can leave its temporary
-copy in `/tmp` until the container restarts. Raise `size=` for larger
-NZB files.
+it, and a copy of its history database while it writes a backup. 128 MiB
+takes uploads of NZB files up to 50 MB; a larger one is refused with
+SABnzbd's own error, and the container stays healthy. An upload that
+fails can leave its temporary copy in `/tmp` until the container
+restarts, and each copy left there lowers what fits. Raise `size=` for
+larger NZB files, or a long history.
 
 ## Configuration
 
@@ -317,11 +325,11 @@ writes the file again.
 
 ### Hostnames and access
 
-SABnzbd answers a request only from a local address, and, until a login
-is set, only for a name it knows: `localhost`, an IP address, a name
-under `*.local`, or one in its host whitelist. That stops another web
-page, opened in a browser on your network, from reaching SABnzbd through
-a name it controls.
+SABnzbd answers a request only from a local address, unless "External
+internet access" lets others in, and, until a login is set, only for a
+name it knows: `localhost`, an IP address, a name under `*.local`, or one
+in its host whitelist. That stops another web page, opened in a browser
+on your network, from reaching SABnzbd through a name it controls.
 
 - `SABNZBD_HOST_WHITELIST` sets the whitelist on first start: names
   separated by commas, such as `sabnzbd,sabnzbd.example.com`, each a host
@@ -331,15 +339,22 @@ a name it controls.
 - Without it, SABnzbd puts the container's hostname there, which changes
   when the container is made again.
 - SABnzbd counts loopback and private addresses as local. A network in
-  `100.64.0.0/10`, which some Kubernetes clusters and VPNs use, is not:
-  add it in Config, Special, `local_ranges`, or SABnzbd refuses its
-  clients.
+  `100.64.0.0/10`, which some Kubernetes clusters and VPNs use, is not.
+  Config, Special, `local_ranges` changes that, but it replaces SABnzbd's
+  own list of private ranges rather than adding to it: list
+  `100.64.0.0/10` together with every range your clients use, such as
+  `192.168.0.0/16`, or SABnzbd refuses them. Loopback is always let in.
+  The image has no shell, so a list that leaves your browser out can be
+  undone only by editing `local_ranges` in `sabnzbd.ini` on the volume.
 
 ### Behind a reverse proxy
 
 Give the proxy's host name in the whitelist, and point the proxy at port
 8080. SABnzbd serves at `/` and, when Config, Special, `url_base` is set,
-under that path as well.
+under that path as well. A proxy on a local address is trusted to say who
+its client is, in `X-Forwarded-For`, so SABnzbd refuses clients from the
+internet that reach it through the proxy until "External internet access"
+lets them in; set a login first.
 
 ### Release check
 
@@ -352,18 +367,29 @@ Release", which writes `check_new_rel = 0`. This
 image does not update SABnzbd from inside: a new release arrives as a new
 image.
 
-### Download folders
+### Downloads and hardlinks
 
-Mount the folders SABnzbd downloads to, such as `/downloads`, owned by
-65532, and set them in Config, Folders. The defaults are
-`/config/Downloads/incomplete` and `/config/Downloads/complete`.
+SABnzbd downloads to `/config/Downloads/incomplete` and
+`/config/Downloads/complete` until you set other folders in Config,
+Folders. Sonarr, Radarr and Lidarr import what SABnzbd finishes, from the
+path SABnzbd reports, and hardlinking, which imports instantly and without
+a second copy, needs the download and the library on one filesystem. So
+give SABnzbd and them one shared `/data` mount, writable by 65532, with
+SABnzbd's folders at `/data/downloads/incomplete` and
+`/data/downloads/complete` and the libraries beside them, not a mount
+each: then the path SABnzbd reports is one they can open, with no remote
+path mapping. divbast's Sonarr, Radarr and Lidarr run as 65532 too, so
+they can link the files SABnzbd writes. On an SELinux host, a `/data`
+bind mount several containers share takes Podman's `:z`, the shared
+label, not `:Z`, which would keep it to one container. Leave `:U` off it:
+Podman would change the owner of everything in it at every start.
 
 ### User scripts
 
 The image has no shell, so a script SABnzbd runs after a download cannot
 be a shell script: one that starts `#!/bin/sh` or `#!/usr/bin/env` does not
-run. A Python script, named `.py`, with no first line naming an
-interpreter, runs with the image's Python. Put scripts in a folder under
+run. A Python script, named `.py` and executable (`chmod +x`), with no
+first line naming an interpreter, runs with the image's Python. Put scripts in a folder under
 `/config` and set it in Config, Folders.
 
 ### Restart
@@ -373,25 +399,44 @@ keeps running. After it, SABnzbd also writes its log to files under
 `/config/logs`, beside the engine's log, since it starts again with fewer
 of the image's options.
 
+### Restoring a backup
+
+Config, General, Restore takes a backup's settings whole, where SABnzbd
+listens included, and SABnzbd then restarts itself, inside the container,
+listening there. A backup from SABnzbd installed on a host says
+`127.0.0.1`, which the container's port cannot reach, so SABnzbd stops
+answering from outside, and the [health check](#health) fails, naming
+it. **Restart the container after a restore:** the image starts SABnzbd
+on every address, on port 8080, again, and SABnzbd saves that. A restore
+also brings back the backup's SSDP setting: if it was on, turn
+`enable_broadcast` off again in Config, Special.
+
 ### Not in the image
 
 SABnzbd looks for `nice` and `ionice` to lower its tools' priority, and
 for `df` to tell whether a folder is on a FAT filesystem; none is in the
 image. SABnzbd logs that and carries on: the tools run at normal
-priority, and the FAT check reads no such folder. There is no `par2`
+priority, and SABnzbd takes every folder to be on a filesystem other than
+FAT. There is no `par2`
 program: SABnzbd's own sabctools module does the repairs.
 
 ## Health
 
 `divbast-sabnzbd health` asks SABnzbd, from inside the container, for
 `/api?mode=version`, which needs no API key, and checks that the answer
-is this image's version. It prints nothing and exits 0 when it is, and one
-`version: <reason>` line and exit 1 when it is not. The image's
+is this image's version. It also checks, in the container's
+`/proc/net/tcp6` and `/proc/net/tcp`, that SABnzbd listens on 8080 on
+every address, so the container's port reaches it: SABnzbd listens where
+its settings say once it restarts itself, which after a
+[restored backup](#restoring-a-backup) can be 127.0.0.1 alone. It prints
+nothing and exits 0 when both hold, and one `version: <reason>` or
+`listen: <reason>` line and exit 1 when one does not. The image's
 `HEALTHCHECK` runs it every 30 seconds; Docker reads it. Podman never sees
 the `HEALTHCHECK` of an image published as an OCI index, so pass the same
 command as `--health-cmd '["/usr/local/bin/divbast-sabnzbd","health"]'`,
 or `HealthCmd=` in a Quadlet, as above. In Kubernetes, the probes above ask
-SABnzbd for the same path.
+SABnzbd for the same path from outside the pod, so they fail too when
+SABnzbd listens on 127.0.0.1 alone, and Kubernetes restarts it.
 
 ## The pipeline
 
@@ -432,7 +477,9 @@ every check passes:
   tarball RARLAB served when it was made, and the build holds the download
   to it from then on: nothing shows that the first download was RARLAB's
   own. To compare it by hand, Debian's `unrar-nonfree` source package
-  carries the same tarball, a few days later, as its `.orig` file;
+  carries the same tarball, a few days later, as its `.orig` file. If
+  RARLAB later serves a different file under the same name, every check
+  fails, naming both checksums, and nothing takes the new file;
 - each new 7-Zip release, with its commit;
 - each line of `python/pins.txt`: what SABnzbd's requirements leave
   unpinned, cryptography today, what a pinned package needs that they
@@ -441,8 +488,9 @@ every check passes:
   together, and the toolchain stage's packages.
 
 A pull request that moves SABnzbd, unrar or a pin runs
-`go run ./cmd/divbast-pins` too, which writes the locks and unrar's
-checksum again from the new pins, so they move together. setuptools stays
+`go run ./cmd/divbast-pins` too, which writes the locks again from the
+new pins, and unrar's checksum into the `UNRAR_SHA256` that Renovate's
+unrar update empties, so they move together. setuptools stays
 at 82.0.1, the newest httptools, which SABnzbd pins, builds with.
 
 The repository variable `SABNZBD_AUTOMERGE` stops Renovate merging when it
@@ -461,9 +509,10 @@ gh variable set SABNZBD_AUTOMERGE --body disabled
 - `just lint` runs every lint gate, and `just pins-check`, which needs the
   network.
 - `go run ./cmd/divbast-pins` writes `python/requirements.lock`,
-  `python/build.lock`, `python/files.txt` and the Containerfile's
-  `UNRAR_SHA256` from the pins, after a change to `python/pins.txt` or the
-  Containerfile's pins.
+  `python/build.lock` and `python/files.txt` from the pins, after a change
+  to `python/pins.txt` or the Containerfile's pins. It fills in the
+  Containerfile's `UNRAR_SHA256` only when it is empty: after moving
+  `UNRAR_VERSION` by hand, empty `UNRAR_SHA256`, then run it.
 
 ## AI/LLM Disclosure
 

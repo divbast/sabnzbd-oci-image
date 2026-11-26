@@ -59,15 +59,17 @@ is a breaking change.
 | Volume | `/config`, owned by 65532, with **no `VOLUME`** instruction |
 | Shell, package manager | **none**; DHI's Python runtime ships pip, setuptools and wheel, which nothing runs |
 | Processes | **one**: SABnzbd as PID 1, after `divbast-sabnzbd serve` execs it; SABnzbd runs `unrar` and `7zz` as it unpacks |
-| Healthy | the shipped probe, `divbast-sabnzbd health`: `/api?mode=version` answers **exactly** the image's version |
+| Healthy | the shipped probe, `divbast-sabnzbd health`: `/api?mode=version` answers **exactly** the image's version, and SABnzbd listens on 8080 on **every address** (`/proc/net/tcp6`, `tcp`) |
 | Engine healthcheck | Docker runs it automatically. **Podman does not**: pass `--health-cmd` yourself |
 
 - **The command writes the first settings once, then becomes SABnzbd.**
   `divbast-sabnzbd serve` writes `/config/sabnzbd.ini` only when there is
   none: `enable_broadcast = 0`, `fixed_ports = 1`, and `host_whitelist`
   from `SABNZBD_HOST_WHITELIST` when set. It writes through a temporary
-  file linked into place, so it never overwrites one, and a malformed
-  whitelist writes nothing. It then checks the running user can write
+  file linked into place, so it never overwrites one; on a filesystem with
+  no hard links, where link(2) says `EPERM` or `EOPNOTSUPP`, such as an SMB
+  share, it creates the file with `O_EXCL` instead. A malformed whitelist
+  writes nothing. It then checks the running user can write
   `/config` and `sabnzbd.ini`, and execs SABnzbd with the environment
   unchanged. `check_new_rel` is left at SABnzbd's own default, on. Never
   add settings it writes at every start: the web UI owns them
@@ -78,12 +80,18 @@ is a breaking change.
   Restart execs it again with `-f` alone of its arguments
   (`RESTART_ARGS`), listening where the settings say. `[::]` was never
   saved, so a restart came back on 127.0.0.1. After a restart PID 1's
-  argv is `python -OO SABnzbd.py -f /config`, and SABnzbd also writes its
-  log to `/config/logs`, without `--disable-file-log`
-- **Health is SABnzbd's own version answer.** It needs no API key, and
-  loopback passes both SABnzbd's access check and its hostname check. A
-  missing or old unrar does not show there: the suite's `TestTools` holds
-  that, from SABnzbd's start log and its warnings
+  argv is `/app/venv/bin/python -OO /app/sabnzbd/SABnzbd.py -f /config`,
+  with `-p` added when SABnzbd was paused, and SABnzbd also writes its log
+  to `/config/logs`, without `--disable-file-log`
+- **Health is SABnzbd's own version answer, and where it listens.** The
+  version needs no API key, and loopback passes both SABnzbd's access
+  check and its hostname check. Then a listener on 8080 at `::`, or at
+  `0.0.0.0` with no IPv6, must be in `/proc/net/tcp6` or `tcp`, or the
+  probe prints one `listen:` line and exits 1: SABnzbd's own restart
+  listens where its settings say, and a restored backup from a host
+  install says 127.0.0.1, which `TestBackupRestore` holds. A missing or
+  old unrar does not show there: the suite's `TestTools` holds that, from
+  SABnzbd's start log and its warnings
 - **Podman never sees this image's `HEALTHCHECK`**, as for every divbast
   image published as an OCI index: users pass
   `--health-cmd '["/usr/local/bin/divbast-sabnzbd","health"]'`, and the
@@ -121,6 +129,12 @@ and the suite holds it:
 - An empty named volume chowned to another owner is given back to 65532
   by the engine on its next mount, while it is empty: a test that needs
   another owner puts a file in it first
+- A backup restored in the web UI with `host = 127.0.0.1`: after SABnzbd's
+  own restart, nothing answers through the container's port and the probe
+  says `listen: … 127.0.0.1 …`; with another port, it says nothing listens
+  on 8080. A container restart puts it back on `::` and 8080, saved.
+  `enable_broadcast` stays as the backup had it. The upload needs the
+  config page's CSRF token in `X-SABnzbd-CSRF`, not the API key
 - SABnzbd logs, harmlessly, that `nice`, `ionice` and `df` are missing:
   "Exception in isFAT(...): No such file or directory: 'df'"
 
@@ -175,18 +189,29 @@ and the suite holds it:
 ## Python dependencies
 
 - **`go run ./cmd/divbast-pins`** writes `python/requirements.lock`,
-  `python/build.lock`, `python/files.txt` and the Containerfile's
-  `UNRAR_SHA256` from what the repository pins: SABnzbd's
+  `python/build.lock`, `python/files.txt`, and the Containerfile's
+  `UNRAR_SHA256` when it is empty, from what the repository pins: SABnzbd's
   `requirements.txt` at `SABNZBD_COMMIT`, read for Linux and the
   Containerfile's DHI Python; upstream's `==` pins exactly; and
   `python/pins.txt`. `just lint` runs it with `-check`, which fails with a
   diff when a file is stale. It needs the network
+- **A set `UNRAR_SHA256` is never rewritten.** Renovate's unrar update
+  empties it, and the tool fills it in from the tarball RARLAB serves then;
+  a set one that RARLAB's tarball no longer matches fails every run, with
+  or without `-check`, naming both checksums. That is RARLAB changing the
+  file under the same name: compare it with the `.orig` tarball of
+  Debian's `unrar-nonfree` before changing the pin by hand
 - **`python/pins.txt`** holds one `package==version` a line, each under a
   comment saying which kind it is: `# upstream leaves it unpinned: <its
   requirement>` (cryptography), `# needed by <package> …` (tzdata, which
   python-dateutil 3.0.0 requires and upstream's list leaves out), or
   `# builds <packages> from source …`, for the build venv alone. A pin for
   a package upstream pins with `==` fails: upstream's pin stands
+- **A yanked release is refused, unless upstream pins it with `==`.** pip
+  installs a yanked release pinned so, and nothing here may move that pin,
+  so the lock keeps it, its comment says it is yanked and PyPI's reason,
+  on one line, and the tool prints a note. A yanked release `pins.txt`
+  names, or a build backend, fails, saying to pin another
 - **A pure-Python package installs from its pure wheel; any other from
   its source release.** The lock's `--no-binary` line names the source
   builds. `build.lock` takes a pure wheel, or every Linux glibc wheel of
@@ -204,7 +229,8 @@ input and merges it once every check passes, while `SABNZBD_AUTOMERGE` is
 - SABnzbd's GitHub releases, pre-releases included, every tag on develop,
   read by a versioning that sorts `5.2.0RC2` below `5.2.0`;
 - unrar's tarball, from RARLAB's `rar_add.htm`, which links the newest,
-  betas included. The sha256 is that of what RARLAB served when the PR was
+  betas included. The update empties `UNRAR_SHA256`, and the post-upgrade
+  task fills it with the sha256 of what RARLAB served when the PR was
   made: nothing shows the first download is RARLAB's own, and Debian's
   `unrar-nonfree` source package carries the same tarball, a few days
   later, for a person to compare;
@@ -242,7 +268,8 @@ need a pin that `pins.txt` lacks fails that task, naming the line to add.
   logged in to dhi.io, for `docker build --check`
 - `just archive`, `just scan`: the image as an OCI archive, then
   `divbast-scan` over it and the published `:latest`
-- `go run ./cmd/divbast-pins`: the locks and unrar's checksum, from the pins
+- `go run ./cmd/divbast-pins`: the locks from the pins, and unrar's checksum
+  when `UNRAR_SHA256` is empty
 - `just ci`: every gate, locally. Run this before committing
 
 ## Code quality

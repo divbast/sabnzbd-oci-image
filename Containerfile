@@ -148,8 +148,9 @@ RUN python3 tools/make_mo.py >/tmp/make_mo.log \
 # checked against the sha256 files.txt names, with curl and sha256sum, so
 # no package's code runs while the network is on: pip download would run
 # each source release's build backend to read its metadata. The Rust
-# crates cryptography's source release names are fetched with it, by
-# cargo, which checks each against its Cargo.lock; orjson carries its own.
+# crates of each source release that carries a Cargo.lock, cryptography's
+# and orjson's, are fetched with it, by cargo, which checks each against
+# that Cargo.lock.
 FROM toolchain AS deps
 COPY python/files.txt python/requirements.lock python/build.lock /src/python/
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
