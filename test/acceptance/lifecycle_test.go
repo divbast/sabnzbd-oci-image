@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -213,9 +214,20 @@ func TestUploadSizes(t *testing.T) {
 	if err != nil {
 		checks.True("a 100 MB NZB upload gets an answer", false, err.Error())
 	} else {
-		added.Status = false
-		took := resp.Status == http.StatusOK && json.Unmarshal(resp.Body, &added) == nil && added.Status
-		checks.True("SABnzbd refuses the 100 MB NZB", !took, fmt.Sprintf("%d %s", resp.Status, harness.Clip(string(resp.Body))))
+		// SABnzbd's own refusal: its JSON, status false, and its warning
+		// naming the file, which the web UI shows
+		var refused struct{ Status *bool }
+		checks.True("SABnzbd answers the 100 MB NZB with status false",
+			json.Unmarshal(resp.Body, &refused) == nil && refused.Status != nil && !*refused.Status,
+			fmt.Sprintf("%d %s", resp.Status, harness.Clip(string(resp.Body))))
+		var got struct {
+			Warnings []struct{ Text string } `json:"warnings"`
+		}
+		api(t, s, key, url.Values{"mode": {"warnings"}}, &got)
+		name := fmt.Sprintf("Invalid NZB file %d.nzb", tooLargeUpload)
+		checks.True("SABnzbd warns it skipped the 100 MB NZB",
+			slices.ContainsFunc(got.Warnings, func(w struct{ Text string }) bool { return strings.Contains(w.Text, name) }),
+			harness.Clip(fmt.Sprint(got.Warnings)))
 	}
 	healthy(t, s, "the shipped probe passes after a refused upload")
 }

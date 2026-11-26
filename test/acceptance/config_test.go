@@ -4,6 +4,9 @@
 package acceptance
 
 import (
+	"net/url"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/divbast/ci/harness"
@@ -95,6 +98,20 @@ func TestMigratedIni(t *testing.T) {
 	harness.Equal(checks, "the whitelist is theirs", "mine.example.com,", iniValue(ini, "host_whitelist"))
 	harness.Equal(checks, "their download folder stands", "/incomplete-downloads", iniValue(ini, "download_dir"))
 	healthy(t, s, "SABnzbd serves on 8080, healthy")
+	// A folder SABnzbd cannot create is its own warning in the web UI
+	var got struct {
+		Warnings []struct{ Text string } `json:"warnings"`
+	}
+	api(t, s, apiKey(t, s), url.Values{"mode": {"warnings"}}, &got)
+	texts := make([]string, 0, len(got.Warnings))
+	for _, w := range got.Warnings {
+		texts = append(texts, w.Text)
+	}
+	checks.True("SABnzbd warns it cannot create their download folder",
+		slices.ContainsFunc(texts, func(s string) bool {
+			return strings.Contains(s, "Cannot create directory") && strings.Contains(s, "downloads")
+		}),
+		harness.Clip(strings.Join(texts, " | ")))
 }
 
 func errString(err error) string {
