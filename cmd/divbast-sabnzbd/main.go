@@ -50,9 +50,28 @@ const configDir = "/config"
 // serverArgv is SABnzbd, as PID 1 runs it: from the venv's Python, at
 // optimisation level 2 for the bytecode the build compiled, with its
 // state in /config, on 8080, with no browser, and logging to stdout alone.
-var serverArgv = []string{
-	"/app/venv/bin/python", "-OO", "/app/sabnzbd/SABnzbd.py",
-	"-f", configDir, "-s", "0.0.0.0:8080", "-b", "0", "--disable-file-log",
+// It listens on [::], which takes IPv4 too, as IPv4-mapped addresses that
+// SABnzbd reads as IPv4, so an IPv6-only network reaches it; a kernel with
+// no IPv6 at all, ipv6, false, cannot open that socket, and gets 0.0.0.0.
+func serverArgv(ipv6 bool) []string {
+	listen := "[::]:8080"
+	if !ipv6 {
+		listen = "0.0.0.0:8080"
+	}
+	return []string{
+		"/app/venv/bin/python", "-OO", "/app/sabnzbd/SABnzbd.py",
+		"-f", configDir, "-s", listen, "-b", "0", "--disable-file-log",
+	}
+}
+
+// hasIPv6 reports whether the kernel can open an IPv6 socket.
+func hasIPv6() bool {
+	fd, err := syscall.Socket(syscall.AF_INET6, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		return false
+	}
+	_ = syscall.Close(fd) // a probe socket, never used
+	return true
 }
 
 // within bounds health's one exchange, inside the HEALTHCHECK's timeout.
@@ -64,7 +83,7 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "serve":
-		err := serve(configDir, os.Environ(), syscall.Exec, os.Stdout)
+		err := serve(configDir, os.Environ(), syscall.Exec, hasIPv6(), os.Stdout)
 		complain(os.Stderr, "%v", err)
 		os.Exit(1)
 	case "health":
@@ -81,10 +100,11 @@ func usage() {
 	os.Exit(2)
 }
 
-// serve writes dir's first settings when it has none, from environ, then
-// has exec replace this process with SABnzbd, with environ unchanged. It
+// serve writes dir's first settings when it has none, from environ, checks
+// SABnzbd can write dir and its settings, then has exec replace this
+// process with SABnzbd, listening as ipv6 says, with environ unchanged. It
 // returns only when one of them failed, with why.
-func serve(dir string, environ []string, exec func(path string, argv, envv []string) error, stdout io.Writer) error {
+func serve(dir string, environ []string, exec func(path string, argv, envv []string) error, ipv6 bool, stdout io.Writer) error {
 	env := func(key string) string {
 		for _, e := range slices.Backward(environ) {
 			if k, v, ok := strings.Cut(e, "="); ok && k == key {
@@ -97,11 +117,15 @@ func serve(dir string, environ []string, exec func(path string, argv, envv []str
 	if err != nil {
 		return err
 	}
+	if err := starter.Writable(dir); err != nil {
+		return err
+	}
 	if wrote {
 		// A failed write to stdout leaves nowhere better to report it.
 		_, _ = fmt.Fprintf(stdout, "divbast-sabnzbd: wrote the first settings to %s/%s: SSDP off, port 8080 fixed\n", dir, starter.File)
 	}
-	return fmt.Errorf("could not start SABnzbd, %s: %w", serverArgv[0], exec(serverArgv[0], serverArgv, environ))
+	argv := serverArgv(ipv6)
+	return fmt.Errorf("could not start SABnzbd, %s: %w", argv[0], exec(argv[0], argv, environ))
 }
 
 // complain writes one line to stderr, after the command's name.

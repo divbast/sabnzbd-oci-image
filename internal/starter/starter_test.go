@@ -144,3 +144,45 @@ func TestEnsureUnwritableDir(t *testing.T) {
 		t.Errorf("the directory holds %d entries, want none", len(entries))
 	}
 }
+
+func TestWritable(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root writes past every mode")
+	}
+	ok := t.TempDir()
+	if err := Writable(ok); err != nil {
+		t.Errorf("Writable() of a writable directory = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ok, File), []byte("[misc]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Writable(ok); err != nil {
+		t.Errorf("Writable() with a writable %s = %v", File, err)
+	}
+	if entries, _ := os.ReadDir(ok); len(entries) != 1 {
+		t.Errorf("Writable() left %d entries, want %s alone", len(entries), File)
+	}
+
+	readOnly := t.TempDir()
+	if err := os.Chmod(readOnly, 0o500); err != nil { //nolint:gosec // G302: a directory the test makes read-only
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(readOnly, 0o700) }) //nolint:gosec // G302: so the test's cleanup can remove it
+	if err := Writable(readOnly); err == nil || !strings.Contains(err.Error(), readOnly) || !strings.Contains(err.Error(), "chown") {
+		t.Errorf("Writable() of a read-only directory = %v, want an error naming it and saying chown", err)
+	}
+
+	// A directory SABnzbd can write, holding a settings file it cannot
+	stale := t.TempDir()
+	ini := filepath.Join(stale, File)
+	if err := os.WriteFile(ini, []byte("[misc]\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if err := Writable(stale); err == nil || !strings.Contains(err.Error(), ini) {
+		t.Errorf("Writable() with a read-only %s = %v, want an error naming it", File, err)
+	}
+	if data, err := os.ReadFile(ini); err != nil || string(data) != "[misc]\n" { //nolint:gosec // G304: the test's own temporary file
+		t.Errorf("%s holds %q, %v after Writable(); want it unchanged", File, data, err)
+	}
+}

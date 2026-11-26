@@ -135,6 +135,34 @@ func Ensure(dir string, env func(string) string) (wrote bool, err error) {
 	return true, syncDir(dir)
 }
 
+// Writable returns nil when the running user can write dir, and the
+// sabnzbd.ini in it when there is one, which SABnzbd writes at every
+// start: it creates and removes a temporary file in dir, and opens the
+// file for appending, writing nothing. Otherwise it returns one error
+// naming the path and saying how to give it to the user, where SABnzbd
+// would stop with a traceback.
+func Writable(dir string) error {
+	uid := os.Getuid()
+	fix := fmt.Sprintf("give it, and everything in it, to uid %d, the user the image runs SABnzbd as, for example with chown -R %d:%d on the host's directory", uid, uid, os.Getgid())
+	tmp, err := os.CreateTemp(dir, ".writable.*")
+	if err != nil {
+		return fmt.Errorf("SABnzbd cannot write %s: %s: %w", dir, fix, err)
+	}
+	err = errors.Join(tmp.Close(), os.Remove(tmp.Name()))
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, File)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0) //nolint:gosec // G304: the settings file in the config directory the image names
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("SABnzbd cannot write %s: %s: %w", path, fix, err)
+	}
+	return f.Close()
+}
+
 // syncDir makes dir's new entry durable.
 func syncDir(dir string) error {
 	d, err := os.Open(dir) //nolint:gosec // G304: the config directory the image names
