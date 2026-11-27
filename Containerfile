@@ -32,7 +32,7 @@ ARG SEVENZIP_COMMIT=d3296e39e1f1f92c7b41c0c3848e65640428d42d
 # PR. Its version is also the Python the locks are generated for. CI
 # verifies its signature by Docker before anything is built, as it does
 # every stage's image below.
-ARG RUNTIME_IMAGE=dhi.io/python:3.15.2-debian13@sha256:d5387cad673412ef60e7fdadec757bd653c7dc289bfdccb4beff6d1ccec94f36
+ARG RUNTIME_IMAGE=dhi.io/python:3.15.2-debian13@sha256:6eab01712a61ba1cf90a08f5e879115c30a4175b598a389edeb549b1d7c0e74c
 
 FROM ${RUNTIME_IMAGE} AS runtime
 
@@ -43,7 +43,7 @@ FROM ${RUNTIME_IMAGE} AS runtime
 # reads, to DHI's build. DHI deletes a superseded build, so a pin can fail
 # the build until Renovate's PR moves it. Python's headers come with the
 # image.
-FROM dhi.io/python:3.15.2-debian13-dev@sha256:a1069444b00f18a15f0088a7f6c33ed6070d7f2593919130892b22c5a4f124b7 AS toolchain
+FROM dhi.io/python:3.15.2-debian13-dev@sha256:52783c0f140d44eb83fd97175bf616b381099704697f21ab0ae6b141e3f827c7 AS toolchain
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 RUN rm /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
