@@ -189,8 +189,8 @@ and the suite holds it:
 ## Python dependencies
 
 - **`go run ./cmd/divbast-pins`** writes `python/requirements.lock`,
-  `python/build.lock`, `python/files.txt`, and the Containerfile's
-  `UNRAR_SHA256` when it is empty, from what the repository pins: SABnzbd's
+  `python/build.lock`, `python/files.txt`, `python/renovate-bounds.json`,
+  and the Containerfile's `UNRAR_SHA256` when it is empty, from what the repository pins: SABnzbd's
   `requirements.txt` at `SABNZBD_COMMIT`, read for Linux and the
   Containerfile's DHI Python; upstream's `==` pins exactly; and
   `python/pins.txt`. `just lint` runs it with `-check`, which fails with a
@@ -207,6 +207,21 @@ and the suite holds it:
   python-dateutil 3.0.0 requires and upstream's list leaves out), or
   `# builds <packages> from source …`, for the build venv alone. A pin for
   a package upstream pins with `==` fails: upstream's pin stands
+- **`python/renovate-bounds.json` is the Renovate preset that keeps a pin
+  inside what asks for it**, which `renovate.json` extends from `main`.
+  For each pins.txt pin, it joins every specifier asked of it:
+  upstream's, for a runtime pin, and each `Requires-Dist` entry naming it,
+  from the per-version JSON PyPI already serves for the lock. Packages of
+  `requirements.lock` bound runtime pins alone, and those of `build.lock`
+  build pins alone. Markers are read as `pip check` reads them: no
+  `extra`, the image's CPython, and either architecture's
+  `platform_machine`. A marker or specifier it cannot read is an error,
+  since Renovate refuses a whole config over one bad `allowedVersions`. A
+  pin gets a rule only when some specifier could refuse a newer version,
+  and a pin that asks another, with `==`, for its own version makes a
+  group of the two. A source build's own requirements are in its sdist
+  alone, so a bound one sets, setuptools' for httptools, is a
+  hand-written rule in `renovate.json`
 - **A yanked release is refused, unless upstream pins it with `==`.** pip
   installs a yanked release pinned so, and nothing here may move that pin,
   so the lock keeps it, its comment says it is yanked and PyPI's reason,
@@ -239,8 +254,9 @@ input and merges it once every check passes, while `SABNZBD_AUTOMERGE` is
 - the DHI images, the Python runtime and `-dev` grouped by the app
   preset, and the toolchain stage's DHI packages, grouped here.
 
-A PR that moves SABnzbd, unrar or a pin runs `go run ./cmd/divbast-pins`
-as a post-upgrade task, which ci's `RENOVATE_ALLOWED_COMMANDS` allows, so
+Renovate proposes no pin past `python/renovate-bounds.json`'s bounds,
+nor setuptools past `renovate.json`'s own rule. A PR that moves SABnzbd,
+unrar or a pin runs `go run ./cmd/divbast-pins` as a post-upgrade task, which ci's `RENOVATE_ALLOWED_COMMANDS` allows, so
 the locks and the checksum move with it. A new SABnzbd whose requirements
 need a pin that `pins.txt` lacks fails that task, naming the line to add.
 

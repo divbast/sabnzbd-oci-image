@@ -22,6 +22,11 @@
 //     source release, which the build compiles;
 //   - python/build.lock: the build backends pins.txt names, with the
 //     sha256 of each wheel a build stage may install;
+//   - python/renovate-bounds.json: a Renovate preset, which renovate.json
+//     extends, with a rule for each pin of pins.txt that upstream or a
+//     package of either lock bounds from above, as pip check reads the
+//     packages' requirements, so Renovate proposes no version of it the
+//     build would refuse;
 //   - the Containerfile's UNRAR_SHA256, the checksum of the tarball RARLAB
 //     serves now, when it is empty, as Renovate's unrar update leaves it. A
 //     set one is never rewritten: one RARLAB's tarball no longer matches

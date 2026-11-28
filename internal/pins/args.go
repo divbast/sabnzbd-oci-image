@@ -13,10 +13,10 @@ import (
 )
 
 // Args is what the tool reads from the Containerfile: the SABnzbd commit
-// whose requirements it locks, the Python the image runs, as major.minor,
-// and unrar's tarball and its checksum.
+// whose requirements it locks, the Python the image runs, as major.minor
+// and as major.minor.patch, and unrar's tarball and its checksum.
 type Args struct {
-	SABnzbdCommit, PythonVersion, UnrarVersion, UnrarSHA256 string
+	SABnzbdCommit, PythonVersion, PythonFullVersion, UnrarVersion, UnrarSHA256 string
 }
 
 // pythonTag is a DHI Python image's version, in its tag.
@@ -76,7 +76,7 @@ func ReadArgs(containerfile []byte) (Args, error) {
 	case 0:
 		errs = append(errs, errors.New("the Containerfile names no dhi.io/python:<x.y.z>- image, so nothing says which Python the venv is for"))
 	case 1:
-		a.PythonVersion = versions[0][:strings.LastIndex(versions[0], ".")]
+		a.PythonVersion, a.PythonFullVersion = versions[0][:strings.LastIndex(versions[0], ".")], versions[0]
 	default:
 		errs = append(errs, fmt.Errorf("the Containerfile names Pythons %s: the -dev image and the runtime must be one", strings.Join(versions, " and ")))
 	}

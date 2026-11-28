@@ -498,6 +498,14 @@ new pins, and unrar's checksum into the `UNRAR_SHA256` that Renovate's
 unrar update empties, so they move together. setuptools stays
 at 82.0.1, the newest httptools, which SABnzbd pins, builds with.
 
+So that Renovate does not propose a pin the build must refuse, the
+command also writes `python/renovate-bounds.json`, a Renovate preset that
+`renovate.json` extends: for each pin that SABnzbd's requirements, or a
+package of the locks, bound, every version range asked of it, as
+`pip check` reads the packages' requirements. Renovate reads it from
+`main`, so a bound lifts once the pull request that moves its source
+merges.
+
 The repository variable `SABNZBD_AUTOMERGE` stops Renovate merging when it
 is anything but `enabled`:
 
@@ -514,7 +522,8 @@ gh variable set SABNZBD_AUTOMERGE --body disabled
 - `just lint` runs every lint gate, and `just pins-check`, which needs the
   network.
 - `go run ./cmd/divbast-pins` writes `python/requirements.lock`,
-  `python/build.lock` and `python/files.txt` from the pins, after a change
+  `python/build.lock`, `python/files.txt` and
+  `python/renovate-bounds.json` from the pins, after a change
   to `python/pins.txt` or the Containerfile's pins. It fills in the
   Containerfile's `UNRAR_SHA256` only when it is empty: after moving
   `UNRAR_VERSION` by hand, empty `UNRAR_SHA256`, then run it.
