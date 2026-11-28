@@ -311,7 +311,7 @@ EOF
 
 # The image's own command: it writes SABnzbd's first settings, then becomes
 # SABnzbd, and is the HEALTHCHECK's probe. Static, on the standard library.
-FROM dhi.io/golang:1.27.4-debian13-dev@sha256:121afb8b390b1d6babba8cd0a93eaf2ffa3735f835d388b9d79c2be38b41ee4f AS probe
+FROM dhi.io/golang:1.27.4-debian13-dev@sha256:c5c02f15e0fd96999d48d70545b7c76b7080caebc9367680812d5244ac316bee AS probe
 ARG SABNZBD_VERSION
 WORKDIR /src
 # go.mod's replace names ./.ci, which the build context leaves out: the
