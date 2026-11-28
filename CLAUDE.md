@@ -168,20 +168,28 @@ and the suite holds it:
   (`OPENSSL_NO_VENDOR=1`), and its Rust crates fetched by cargo with the
   network, checked by its `Cargo.lock`, then built offline. `pip check`
   must pass, and the venv holds no pip
-- **unrar and 7zz link to the runtime's glibc and libstdc++**, and each
-  must pass `check-elf`: PIE, `BIND_NOW`, `GNU_RELRO`, and no library the
-  runtime image does not ship. unrar must print "Alexander Roshal" and be
-  5.50 or newer; 7zz must list no RAR. Both build with
+- **7zz links to the runtime's glibc and libstdc++**, and must pass
+  `check-elf`: PIE, `BIND_NOW`, `GNU_RELRO`, and no library the runtime
+  image does not ship; it must list no RAR. It builds with
   `-D_FORTIFY_SOURCE=3 -fstack-protector-strong -fPIE` and
   `-pie -Wl,-z,relro,-z,now`; 7-Zip's makefiles take them through
   `MY_ARCH` and `LDFLAGS`, since they read no CFLAGS
-- **The SBOM is written from the same ARGs** that pin unrar and 7-Zip, and
-  unrar's version from `version.hpp`, so it cannot go stale. Its label is
+- **unrar is not built here.** The final stage copies `/unrar` and its
+  licence from the `ghcr.io/divbast/unrar:latest` carrier of
+  divbast/native-tools, by digest: see that repository's README, "Using a
+  carrier". The same digest feeds the sbom stage, which takes unrar's
+  component from the carrier's `/records/sbom.cdx.json`. `divbast-verify-images`
+  checks the digest's attestation, and Renovate's dockerfile manager moves
+  it. A change to how unrar is built is a change there
+- **The SBOM is written from the 7-Zip ARGs and the carrier's records**,
+  so it cannot go stale. The carrier's unrar component keeps its version,
+  licence, source and CPE; the sbom stage adds only the binary's path, and
+  fails if the component has neither a CPE nor a purl. The label is
   `io.github.divbast.scan.sboms`, which ci's scan reads; neither scanner
-  sees a binary built here otherwise
+  sees a binary copied in otherwise
 - **Every ARG pair stays adjacent and in order** (`SABNZBD_VERSION` then
-  `SABNZBD_COMMIT`, `UNRAR_VERSION` then `UNRAR_SHA256`, `SEVENZIP_VERSION`
-  then `SEVENZIP_COMMIT`): Renovate's managers read them that way
+  `SABNZBD_COMMIT`, `SEVENZIP_VERSION` then `SEVENZIP_COMMIT`):
+  Renovate's managers read them that way
 - **hadolint forgets a stage's `SHELL` when an `ARG` or `COPY` comes
   between it and the `RUN`**: each stage puts `SHELL` right before its
   first `RUN`
@@ -189,18 +197,12 @@ and the suite holds it:
 ## Python dependencies
 
 - **`go run ./cmd/divbast-pins`** writes `python/requirements.lock`,
-  `python/build.lock`, `python/files.txt`, `python/renovate-bounds.json`,
-  and the Containerfile's `UNRAR_SHA256` when it is empty, from what the repository pins: SABnzbd's
+  `python/build.lock`, `python/files.txt` and `python/renovate-bounds.json`
+  from what the repository pins: SABnzbd's
   `requirements.txt` at `SABNZBD_COMMIT`, read for Linux and the
   Containerfile's DHI Python; upstream's `==` pins exactly; and
   `python/pins.txt`. `just lint` runs it with `-check`, which fails with a
   diff when a file is stale. It needs the network
-- **A set `UNRAR_SHA256` is never rewritten.** Renovate's unrar update
-  empties it, and the tool fills it in from the tarball RARLAB serves then;
-  a set one that RARLAB's tarball no longer matches fails every run, with
-  or without `-check`, naming both checksums. That is RARLAB changing the
-  file under the same name: compare it with the `.orig` tarball of
-  Debian's `unrar-nonfree` before changing the pin by hand
 - **`python/pins.txt`** holds one `package==version` a line, each under a
   comment saying which kind it is: `# upstream leaves it unpinned: <its
   requirement>` (cryptography), `# needed by <package> …` (tzdata, which
@@ -243,21 +245,19 @@ input and merges it once every check passes, while `SABNZBD_AUTOMERGE` is
 
 - SABnzbd's GitHub releases, pre-releases included, every tag on develop,
   read by a versioning that sorts `5.2.0RC2` below `5.2.0`;
-- unrar's tarball, from RARLAB's `rar_add.htm`, which links the newest,
-  betas included. The update empties `UNRAR_SHA256`, and the post-upgrade
-  task fills it with the sha256 of what RARLAB served when the PR was
-  made: nothing shows the first download is RARLAB's own, and Debian's
-  `unrar-nonfree` source package carries the same tarball, a few days
-  later, for a person to compare;
+- the unrar carrier's digest, by Renovate's dockerfile manager, from the
+  `COPY --from=ghcr.io/divbast/unrar:latest@sha256:…` lines, which hold
+  one digest; it has no release-age hold, as divbast's own packages have
+  none;
 - 7-Zip's GitHub releases, with the commit;
 - each line of `python/pins.txt`, from PyPI;
 - the DHI images, the Python runtime and `-dev` grouped by the app
   preset, and the toolchain stage's DHI packages, grouped here.
 
 Renovate proposes no pin past `python/renovate-bounds.json`'s bounds,
-nor setuptools past `renovate.json`'s own rule. A PR that moves SABnzbd,
-unrar or a pin runs `go run ./cmd/divbast-pins` as a post-upgrade task, which ci's `RENOVATE_ALLOWED_COMMANDS` allows, so
-the locks and the checksum move with it. A new SABnzbd whose requirements
+nor setuptools past `renovate.json`'s own rule. A PR that moves SABnzbd
+or a pin runs `go run ./cmd/divbast-pins` as a post-upgrade task, which
+ci's `RENOVATE_ALLOWED_COMMANDS` allows, so the locks move with it. A new SABnzbd whose requirements
 need a pin that `pins.txt` lacks fails that task, naming the line to add.
 
 ## Where the shared parts live
@@ -284,8 +284,7 @@ need a pin that `pins.txt` lacks fails that task, naming the line to add.
   logged in to dhi.io, for `docker build --check`
 - `just archive`, `just scan`: the image as an OCI archive, then
   `divbast-scan` over it and the published `:latest`
-- `go run ./cmd/divbast-pins`: the locks from the pins, and unrar's checksum
-  when `UNRAR_SHA256` is empty
+- `go run ./cmd/divbast-pins`: the locks from the pins
 - `just ci`: every gate, locally. Run this before committing
 
 ## Code quality

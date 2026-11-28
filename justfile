@@ -63,10 +63,10 @@ ci-checkout:
 lint:
     {{ just_executable() }} ci-fresh actions-check workflow-audit actionlint shell-lint go-lint go-test reuse-lint app-lint pins-check
 
-# The Python locks and unrar's checksum, held to the pins: fails, with a
+# The Python locks, held to the pins: fails, with a
 # diff, when go run ./cmd/divbast-pins would change any of them. It reads
-# SABnzbd's requirements from GitHub, the releases from PyPI and unrar's
-# tarball from RARLAB, so it needs the network
+# SABnzbd's requirements from GitHub and the releases from PyPI, so it
+# needs the network
 pins-check:
     go run ./cmd/divbast-pins -check
 

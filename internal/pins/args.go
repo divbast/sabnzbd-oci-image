@@ -4,7 +4,6 @@
 package pins
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"regexp"
@@ -14,21 +13,15 @@ import (
 
 // Args is what the tool reads from the Containerfile: the SABnzbd commit
 // whose requirements it locks, the Python the image runs, as major.minor
-// and as major.minor.patch, and unrar's tarball and its checksum.
+// and as major.minor.patch.
 type Args struct {
-	SABnzbdCommit, PythonVersion, PythonFullVersion, UnrarVersion, UnrarSHA256 string
+	SABnzbdCommit, PythonVersion, PythonFullVersion string
 }
 
 // pythonTag is a DHI Python image's version, in its tag.
 var pythonTag = regexp.MustCompile(`dhi\.io/python:(\d+)\.(\d+)\.(\d+)-`)
 
-var (
-	commitHex  = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	unrarValue = regexp.MustCompile(`^\d+(\.\d+)*$`)
-	// unrarSum is a sha256, or nothing: Renovate's unrar update empties it,
-	// for Generate to fill in.
-	unrarSum = regexp.MustCompile(`^([0-9a-f]{64})?$`)
-)
+var commitHex = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // arg returns the value of the one ARG name=value line of containerfile.
 func arg(containerfile []byte, name string) (string, error) {
@@ -53,8 +46,6 @@ func ReadArgs(containerfile []byte) (Args, error) {
 		ok   *regexp.Regexp
 	}{
 		{"SABNZBD_COMMIT", &a.SABnzbdCommit, commitHex},
-		{"UNRAR_VERSION", &a.UnrarVersion, unrarValue},
-		{"UNRAR_SHA256", &a.UnrarSHA256, unrarSum},
 	} {
 		value, err := arg(containerfile, v.name)
 		switch {
@@ -84,13 +75,4 @@ func ReadArgs(containerfile []byte) (Args, error) {
 		return Args{}, err
 	}
 	return a, nil
-}
-
-// SetArg returns containerfile with its one ARG name= line set to value.
-func SetArg(containerfile []byte, name, value string) ([]byte, error) {
-	if _, err := arg(containerfile, name); err != nil {
-		return nil, err
-	}
-	re := regexp.MustCompile(`(?m)^ARG ` + regexp.QuoteMeta(name) + `=.*$`)
-	return re.ReplaceAllLiteral(bytes.Clone(containerfile), []byte("ARG "+name+"="+value)), nil
 }

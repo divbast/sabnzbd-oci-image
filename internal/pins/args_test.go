@@ -13,8 +13,6 @@ import (
 const containerfile = `# The app
 ARG SABNZBD_VERSION=5.2.0RC2
 ARG SABNZBD_COMMIT=ffc619947b5ba4e6520e3a0bc70680024e184b2f
-ARG UNRAR_VERSION=7.3.2
-ARG UNRAR_SHA256=f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99
 ARG RUNTIME_IMAGE=dhi.io/python:3.15.2-debian13@sha256:d5387cad673412ef60e7fdadec757bd653c7dc289bfdccb4beff6d1ccec94f36
 
 FROM dhi.io/python:3.15.2-debian13-dev@sha256:a1069444b00f18a15f0088a7f6c33ed6070d7f2593919130892b22c5a4f124b7 AS deps
@@ -26,22 +24,14 @@ func TestReadArgs(t *testing.T) {
 	got, err := ReadArgs([]byte(containerfile))
 	want := Args{
 		SABnzbdCommit: "ffc619947b5ba4e6520e3a0bc70680024e184b2f", PythonVersion: "3.15", PythonFullVersion: "3.15.2",
-		UnrarVersion: "7.3.2", UnrarSHA256: "f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99",
 	}
 	if err != nil || got != want {
 		t.Errorf("ReadArgs() = %+v, %v; want %+v", got, err, want)
 	}
-	// Renovate's unrar update empties the checksum, for the tool to fill in
-	emptied := strings.Replace(containerfile, "=f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99", "=", 1)
-	want.UnrarSHA256 = ""
-	if got, err = ReadArgs([]byte(emptied)); err != nil || got != want {
-		t.Errorf("ReadArgs() with UNRAR_SHA256 empty = %+v, %v; want %+v", got, err, want)
-	}
 	for _, tt := range []struct{ name, text, want string }{
-		{"short-sha256", strings.Replace(containerfile, "=f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99", "=f61a1160", 1), "UNRAR_SHA256"},
 		{"no-commit", strings.Replace(containerfile, "ARG SABNZBD_COMMIT=", "ARG SABNZBD_REF=", 1), "SABNZBD_COMMIT"},
 		{"short-commit", strings.Replace(containerfile, "=ffc619947b5ba4e6520e3a0bc70680024e184b2f", "=ffc6199", 1), "SABNZBD_COMMIT"},
-		{"twice", containerfile + "ARG UNRAR_VERSION=7.3.1\n", "UNRAR_VERSION"},
+		{"twice", containerfile + "ARG SABNZBD_COMMIT=ffc619947b5ba4e6520e3a0bc70680024e184b2f\n", "SABNZBD_COMMIT"},
 		// The -dev image and the runtime must be one Python
 		{"two-pythons", strings.Replace(containerfile, "3.15.2-debian13-dev", "3.14.10-debian13-dev", 1), "3.14.10"},
 		{"no-python", strings.ReplaceAll(containerfile, "dhi.io/python:", "dhi.io/golang:"), "dhi.io/python"},
@@ -52,18 +42,5 @@ func TestReadArgs(t *testing.T) {
 				t.Errorf("ReadArgs() = %v, want an error naming %q", err, tt.want)
 			}
 		})
-	}
-}
-
-func TestSetArg(t *testing.T) {
-	t.Parallel()
-	sha := strings.Repeat("b", 64)
-	got, err := SetArg([]byte(containerfile), "UNRAR_SHA256", sha)
-	want := strings.Replace(containerfile, "f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99", sha, 1)
-	if err != nil || string(got) != want {
-		t.Errorf("SetArg() =\n%s, %v\nwant\n%s", got, err, want)
-	}
-	if _, err := SetArg([]byte(containerfile), "UNRAR_MD5", sha); err == nil || !strings.Contains(err.Error(), "UNRAR_MD5") {
-		t.Errorf("SetArg() of an ARG the file lacks = %v, want an error naming it", err)
 	}
 }

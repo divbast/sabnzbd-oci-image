@@ -5,17 +5,10 @@ package pins
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"slices"
 	"strings"
 )
-
-func sha256Of(data []byte) string {
-	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:])
-}
 
 // context is how many unchanged lines a hunk shows around a change.
 const contextLines = 3
