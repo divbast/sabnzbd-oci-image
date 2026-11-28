@@ -49,7 +49,7 @@ RUN rm /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         binutils=2.44-3+deb13u0+dhi10 \
-        cargo=1.100.0-5 \
+        cargo=1.100.1-0 \
         curl=8.14.1-2+deb13u7+dhi1 \
         g++=4:14.2.0-1+deb13u0+dhi0 \
         gcc=4:14.2.0-1+deb13u0+dhi0 \
@@ -61,7 +61,7 @@ RUN rm /etc/apt/sources.list.d/debian.sources \
         libssl-dev=3.5.9-1~deb13u1+dhi2 \
         make=4.4.1-2+deb13u0+dhi1 \
         pkgconf=1.8.1-4+deb13u0+dhi1 \
-        rustc=1.100.0-5 \
+        rustc=1.100.1-0 \
     && rm -rf /var/lib/apt/lists/*
 # The check each native binary below must pass: position-independent, bound
 # at load, with a read-only relocation table, and needing no library the
