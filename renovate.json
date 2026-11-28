@@ -1,6 +1,10 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>divbast/renovate-config", "github>divbast/renovate-config:app"],
+  "extends": [
+    "github>divbast/renovate-config",
+    "github>divbast/renovate-config:app",
+    "github>divbast/sabnzbd-oci-image//python/renovate-bounds"
+  ],
   "customDatasources": {
     "rarlab": {
       "description": "unrar's source tarballs, as RARLAB's own download page for extras links them: RARLAB publishes no feed and no checksums, and the page links the newest tarball, betas included. Each link is a release; extractVersion below keeps the unrarsrc-<n>.tar.gz ones and their counter-style names.",

@@ -25,7 +25,7 @@ func TestReadArgs(t *testing.T) {
 	t.Parallel()
 	got, err := ReadArgs([]byte(containerfile))
 	want := Args{
-		SABnzbdCommit: "ffc619947b5ba4e6520e3a0bc70680024e184b2f", PythonVersion: "3.15",
+		SABnzbdCommit: "ffc619947b5ba4e6520e3a0bc70680024e184b2f", PythonVersion: "3.15", PythonFullVersion: "3.15.2",
 		UnrarVersion: "7.3.2", UnrarSHA256: "f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99",
 	}
 	if err != nil || got != want {
