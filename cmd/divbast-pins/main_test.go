@@ -22,11 +22,9 @@ import (
 const commit = "ffc619947b5ba4e6520e3a0bc70680024e184b2f"
 
 // containerfile is the start of the image's Containerfile, as the tool
-// reads it, with UNRAR_SHA256 empty, as Renovate's unrar update leaves it.
+// reads it.
 const containerfile = `ARG SABNZBD_VERSION=5.2.0RC2
 ARG SABNZBD_COMMIT=` + commit + `
-ARG UNRAR_VERSION=7.3.2
-ARG UNRAR_SHA256=
 ARG RUNTIME_IMAGE=dhi.io/python:3.15.2-debian13@sha256:c6c9414d78bd285be1a4dacfb94ae61732c77019605b1678792823e319b720f6
 FROM dhi.io/python:3.15.2-debian13-dev@sha256:c73e2cb9e8d56cfab7f01b99f67b2c830e84e7397dfe666d8bfaf5a69ad0ce85 AS deps
 FROM ${RUNTIME_IMAGE}
@@ -46,10 +44,9 @@ cryptography>=3.0
 pywin32==312; sys_platform == 'win32'
 `
 
-// servers stands in for GitHub, PyPI and RARLAB, all on one server, with
-// unrar's tarball served as tarball, or not at all when nil, and each
+// servers stands in for GitHub and PyPI, both on one server, with each
 // release in yanked yanked on PyPI, for broken metadata.
-func servers(t *testing.T, tarball []byte, yanked ...string) pins.Sources {
+func servers(t *testing.T, yanked ...string) pins.Sources {
 	t.Helper()
 	release := func(files ...string) []map[string]any {
 		out := make([]map[string]any, 0, len(files))
@@ -84,8 +81,6 @@ func servers(t *testing.T, tarball []byte, yanked ...string) pins.Sources {
 		switch {
 		case r.URL.Path == "/sabnzbd/sabnzbd/"+commit+"/requirements.txt":
 			_, _ = w.Write([]byte(upstream))
-		case r.URL.Path == "/rar/unrarsrc-7.3.2.tar.gz" && tarball != nil:
-			_, _ = w.Write(tarball)
 		case pypi[r.URL.Path] != nil:
 			_ = json.NewEncoder(w).Encode(map[string]any{"urls": pypi[r.URL.Path], "info": map[string]any{"requires_dist": requires[r.URL.Path]}})
 		default:
@@ -93,7 +88,7 @@ func servers(t *testing.T, tarball []byte, yanked ...string) pins.Sources {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return pins.Sources{PyPI: &pins.PyPI{Base: srv.URL, Client: srv.Client()}, GitHub: srv.URL, RARLAB: srv.URL, Client: srv.Client()}
+	return pins.Sources{PyPI: &pins.PyPI{Base: srv.URL, Client: srv.Client()}, GitHub: srv.URL, Client: srv.Client()}
 }
 
 // repo writes a repository holding the Containerfile and pins.txt.
@@ -128,9 +123,7 @@ func read(t *testing.T, dir, name string) string {
 
 func TestCheckMode(t *testing.T) {
 	t.Parallel()
-	tarball := []byte("unrar source")
-	sum := sha256.Sum256(tarball)
-	src, dir := servers(t, tarball), repo(t)
+	src, dir := servers(t), repo(t)
 	runIn := func(args ...string) (int, string, string) {
 		var stdout, stderr bytes.Buffer
 		code := run(t.Context(), append([]string{"-C", dir}, args...), src, &stdout, &stderr)
@@ -180,9 +173,8 @@ func TestCheckMode(t *testing.T) {
 	if n := strings.Count(bounds, `"allowedVersions"`); n != 1 {
 		t.Errorf("renovate-bounds.json holds %d rules; want cryptography's alone", n)
 	}
-	cf := read(t, dir, "Containerfile")
-	if want := strings.Replace(containerfile, "ARG UNRAR_SHA256=\n", "ARG UNRAR_SHA256="+hex.EncodeToString(sum[:])+"\n", 1); cf != want {
-		t.Errorf("Containerfile =\n%s\nwant only UNRAR_SHA256 filled in, with the served tarball's", cf)
+	if cf := read(t, dir, "Containerfile"); cf != containerfile {
+		t.Errorf("Containerfile =\n%s\nwant it left as it was", cf)
 	}
 
 	// Current: nothing to say
@@ -217,59 +209,12 @@ func TestCheckMode(t *testing.T) {
 	}
 }
 
-// TestUnrarMissing is a tarball RARLAB no longer serves: the tool fails,
-// naming it, and writes nothing.
-func TestUnrarMissing(t *testing.T) {
-	t.Parallel()
-	src, dir := servers(t, nil), repo(t)
-	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"-C", dir}, src, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "unrarsrc-7.3.2.tar.gz") {
-		t.Errorf("run() = %d, stderr %q; want 1 naming the tarball", code, stderr.String())
-	}
-	if got := read(t, dir, "Containerfile"); got != containerfile {
-		t.Error("the Containerfile changed though the tarball was missing")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "python", "requirements.lock")); err == nil {
-		t.Error("a lock was written though the tarball was missing")
-	}
-}
-
-// TestUnrarPinHolds is RARLAB serving a different file under the name
-// UNRAR_SHA256 already pins: the tool never takes it, with -check or
-// without, and says why, so neither a person nor an automerged pull
-// request accepts the new file by running it again.
-func TestUnrarPinHolds(t *testing.T) {
-	t.Parallel()
-	pinned := sha256.Sum256([]byte("unrar source"))
-	served := sha256.Sum256([]byte("another unrar source"))
-	cf := strings.Replace(containerfile, "ARG UNRAR_SHA256=\n", "ARG UNRAR_SHA256="+hex.EncodeToString(pinned[:])+"\n", 1)
-	for _, args := range [][]string{nil, {"-check"}} {
-		src, dir := servers(t, []byte("another unrar source")), repoWith(t, cf)
-		var stdout, stderr bytes.Buffer
-		code := run(t.Context(), append([]string{"-C", dir}, args...), src, &stdout, &stderr)
-		msg := stderr.String()
-		if code != 1 || !strings.Contains(msg, "unrarsrc-7.3.2.tar.gz") || !strings.Contains(msg, hex.EncodeToString(served[:])) ||
-			!strings.Contains(msg, hex.EncodeToString(pinned[:])) || !strings.Contains(msg, "unrar-nonfree") {
-			t.Errorf("run(%q) = %d, stderr %q; want 1, naming the tarball, both checksums and Debian's unrar-nonfree", args, code, msg)
-		}
-		if strings.Contains(msg, "commit what it writes") || stdout.Len() != 0 {
-			t.Errorf("run(%q) printed %q, stderr %q; want no diff and no advice to regenerate", args, stdout.String(), msg)
-		}
-		if got := read(t, dir, "Containerfile"); got != cf {
-			t.Errorf("run(%q) changed the Containerfile", args)
-		}
-		if _, err := os.Stat(filepath.Join(dir, "python", "requirements.lock")); err == nil {
-			t.Errorf("run(%q) wrote a lock", args)
-		}
-	}
-}
-
 // TestYankedUpstreamPin is a release SABnzbd pins with == that PyPI has
 // since yanked: pip still installs it, so the tool keeps it, says so in
 // the lock and in a note, and exits 0. One pins.txt names is refused.
 func TestYankedUpstreamPin(t *testing.T) {
 	t.Parallel()
-	src, dir := servers(t, []byte("unrar source"), "six"), repo(t)
+	src, dir := servers(t, "six"), repo(t)
 	var stdout, stderr bytes.Buffer
 	if code := run(t.Context(), []string{"-C", dir}, src, &stdout, &stderr); code != 0 {
 		t.Fatalf("run() = %d, stderr %q; want 0", code, stderr.String())
@@ -281,7 +226,7 @@ func TestYankedUpstreamPin(t *testing.T) {
 		t.Errorf("requirements.lock =\n%s\nwant six's comment to say it is yanked, and why", lock)
 	}
 
-	src, dir = servers(t, []byte("unrar source"), "cryptography"), repo(t)
+	src, dir = servers(t, "cryptography"), repo(t)
 	stdout.Reset()
 	stderr.Reset()
 	if code := run(t.Context(), []string{"-C", dir}, src, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "cryptography 50.0.2 is yanked") {

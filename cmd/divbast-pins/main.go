@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-// Command divbast-pins writes the image's Python locks and unrar's
-// checksum from what the repository pins.
+// Command divbast-pins writes the image's Python locks from what the
+// repository pins.
 //
 // Usage:
 //
@@ -10,12 +10,11 @@
 //
 // It reads, in DIR, the repository's root by default:
 //   - the Containerfile's SABNZBD_COMMIT, its dhi.io/python images, which
-//     must be one Python, and UNRAR_VERSION;
+//     must be one Python;
 //   - python/pins.txt, each pin under a comment saying why it is there.
 //
 // It fetches SABnzbd's requirements.txt at that commit from GitHub, each
-// package's release from PyPI, and unrar's tarball from RARLAB, and
-// writes:
+// package's release from PyPI, and writes:
 //   - python/requirements.lock: every package the image installs, for
 //     Linux and that Python, at upstream's own pin or else pins.txt's, with
 //     the sha256 of its pure wheel or, for one with C or Rust code, of its
@@ -26,11 +25,7 @@
 //     extends, with a rule for each pin of pins.txt that upstream or a
 //     package of either lock bounds from above, as pip check reads the
 //     packages' requirements, so Renovate proposes no version of it the
-//     build would refuse;
-//   - the Containerfile's UNRAR_SHA256, the checksum of the tarball RARLAB
-//     serves now, when it is empty, as Renovate's unrar update leaves it. A
-//     set one is never rewritten: one RARLAB's tarball no longer matches
-//     is an error.
+//     build would refuse.
 //
 // Renovate runs it in each pull request that moves one of those pins.
 // With -check it writes nothing, prints a unified diff of each file that
@@ -40,8 +35,8 @@
 // Exit codes:
 //
 //	0  the files written, or, with -check, already current
-//	1  a file is stale, with -check; or a pin, upstream's list, PyPI,
-//	   GitHub or RARLAB refused what the files need, or a file could not
+//	1  a file is stale, with -check; or a pin, upstream's list, PyPI or
+//	   GitHub refused what the files need, or a file could not
 //	   be read or written
 //	2  the command line is wrong
 package main

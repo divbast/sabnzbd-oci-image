@@ -12,14 +12,6 @@
 # packages SABnzbd's requirements.txt there asks for.
 ARG SABNZBD_VERSION=5.2.0RC2
 ARG SABNZBD_COMMIT=ffc619947b5ba4e6520e3a0bc70680024e184b2f
-# unrar's source, as RARLAB names its tarball, which is a counter, not
-# unrar's version: the version is in the source's version.hpp. Renovate
-# moves the tarball's name from the newest RARLAB's page links, betas
-# included, and go run ./cmd/divbast-pins writes the sha256 of the tarball
-# RARLAB served then, which publishes no checksum of its own. ADD holds the
-# download to it.
-ARG UNRAR_VERSION=7.3.2
-ARG UNRAR_SHA256=f61a1160d6e2ebbda2ad353c8e82f62ab4312f97fde23c6c2c982d25e0014f99
 # 7-Zip, from its own GitHub repository: Renovate moves the release and the
 # commit its tag names in one PR, adjacent and in this order. The 7zz stage
 # fetches the commit and checks the tag still names it.
@@ -204,32 +196,9 @@ RUN --network=none python3 -m venv --without-pip /app/venv \
 COPY --from=fetch /app/sabnzbd /app/sabnzbd
 RUN --network=none python3 -m compileall -q -j0 -o 2 --invalidation-mode unchecked-hash /app/venv/lib /app/sabnzbd
 
-# unrar, RARLAB's own, which SABnzbd needs to unpack RAR archives: from the
-# tarball, held to its sha256, linked to the runtime's glibc and libstdc++,
-# so the scan and DHI's updates cover them, with a stack protector,
-# FORTIFY_SOURCE, PIE and full RELRO. upstream's -std=c++11 stays, since
-# setting CXXFLAGS replaces its flags. Its version, from version.hpp, goes
-# to the SBOM.
-FROM toolchain AS unrar
-ARG UNRAR_VERSION
-ARG UNRAR_SHA256
-ADD --checksum=sha256:${UNRAR_SHA256} https://www.rarlab.com/rar/unrarsrc-${UNRAR_VERSION}.tar.gz /tmp/unrar.tar.gz
-SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
-RUN tar -xzf /tmp/unrar.tar.gz -C /tmp \
-    && make -C /tmp/unrar -j"$(nproc)" unrar \
-        CXXFLAGS="-O2 -std=c++11 -D_FORTIFY_SOURCE=3 -fstack-protector-strong -fPIE" \
-        LDFLAGS="-pthread -pie -Wl,-z,relro,-z,now" \
-    && install -D -m 0755 /tmp/unrar/unrar /out/unrar \
-    && install -D -m 0644 /tmp/unrar/license.txt /out/doc/license.txt \
-    && check-elf /out/unrar \
-    && { /out/unrar || true; } >/tmp/banner \
-    && grep -m1 'Alexander Roshal' /tmp/banner \
-    && read -r major minor beta < <(awk '/#define RARVER_MAJOR/ {M=$3} /#define RARVER_MINOR/ {m=$3} /#define RARVER_BETA/ {b=$3} END {print M, m, b}' /tmp/unrar/version.hpp) \
-    && if ((major < 5 || (major == 5 && minor < 50))); then echo "ERROR: unrar ${major}.${minor} is older than SABnzbd's 5.50" >&2; exit 1; fi \
-    && printf '%s %s %s\n' "${major}" "${minor}" "${beta}" >/out/unrar.version
-
 # 7zz, 7-Zip's own console program, from its GitHub repository by commit,
-# with the tag checked as SABnzbd's is. No RAR codec: unrar does that.
+# with the tag checked as SABnzbd's is. No RAR codec: unrar does that, and
+# comes from divbast/native-tools.
 # The makefiles take no CFLAGS, so the same hardening goes in MY_ARCH,
 # which every compile and the link read, and the link's own in LDFLAGS.
 # There is no assembler, so 7-Zip's C code stands in for its hand-written
@@ -268,34 +237,34 @@ RUN make -j"$(nproc)" -f ../../cmpl_gcc.mak DISABLE_RAR=1 \
     && if grep -i rar /tmp/info; then echo "ERROR: 7zz lists RAR, which DISABLE_RAR leaves out" >&2; exit 1; fi \
     && grep -m1 '7-Zip' /tmp/info
 
-# The SBOM of what no scanner sees in the image: unrar and 7zz, built here,
-# each by the identifier the scan matches it by. ci's divbast-scan reads
-# it through the label below. unrar's version is its program's, from
-# version.hpp, not the tarball's name.
+# The SBOM of what no scanner sees in the image: unrar, which the carrier
+# below describes in its own records, and 7zz, built here, each by the
+# identifier the scan matches it by. ci's divbast-scan reads it through the
+# label below. unrar's component stays as the carrier gave it, with its
+# version, licence, source and CPE; this adds only where the binary sits in
+# this image, and fails the build if the component names nothing the scan
+# can match it by.
 FROM toolchain AS sbom
 ARG SEVENZIP_VERSION
-COPY --from=unrar /out/unrar.version /tmp/unrar.version
+COPY --from=ghcr.io/divbast/unrar:latest@sha256:a37d182b01ee0379654a5cbdc3505636272580c55fbf2b867faae7790f217420 /records/sbom.cdx.json /tmp/sbom/unrar.cdx.json
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
-RUN read -r major minor beta </tmp/unrar.version \
-    && unrar="${major}.${minor}" \
-    && if ((beta > 0)); then version="${unrar} beta ${beta}"; else version="${unrar}"; fi \
-    && install -d /out \
-    && python3 - "${unrar}" "${version}" "${SEVENZIP_VERSION}" >/out/sbom.cdx.json <<'EOF'
+RUN install -d /out \
+    && python3 - "${SEVENZIP_VERSION}" >/out/sbom.cdx.json <<'EOF'
 import json, sys
-unrar, unrar_version, sevenzip = sys.argv[1:]
+sevenzip = sys.argv[1]
+carrier = json.load(open("/tmp/sbom/unrar.cdx.json"))
+unrar = [c for c in carrier["components"] if c["name"] == "unrar"]
+if len(unrar) != 1:
+    sys.exit("the carrier's SBOM must hold exactly one unrar component, not %d" % len(unrar))
+if not (unrar[0].get("cpe") or unrar[0].get("purl")):
+    sys.exit("the carrier's unrar component has neither a cpe nor a purl, so the scan could not match it")
+unrar[0].setdefault("properties", []).append({"name": "path", "value": "/usr/local/bin/unrar"})
 json.dump({
     "bomFormat": "CycloneDX",
     "specVersion": "1.6",
     "version": 1,
     "components": [
-        {
-            "type": "application",
-            "name": "unrar",
-            "version": unrar_version,
-            "cpe": f"cpe:2.3:a:rarlab:unrar:{unrar}:*:*:*:*:*:*:*",
-            "licenses": [{"license": {"name": "UnRAR"}}],
-            "properties": [{"name": "path", "value": "/usr/local/bin/unrar"}],
-        },
+        *unrar,
         {
             "type": "application",
             "name": "7-zip",
@@ -331,10 +300,13 @@ ARG SABNZBD_VERSION
 # Root-owned, and never written: SABnzbd writes to /config and /tmp alone
 COPY --from=deps /app/venv /app/venv
 COPY --from=deps /app/sabnzbd /app/sabnzbd
-COPY --from=unrar /out/unrar /usr/local/bin/unrar
+# unrar, RARLAB's own, built once in divbast/native-tools from its source and
+# attested there: ci's divbast-verify-images checks the attestation of this
+# digest before the image builds, and Renovate moves the digest
+COPY --from=ghcr.io/divbast/unrar:latest@sha256:a37d182b01ee0379654a5cbdc3505636272580c55fbf2b867faae7790f217420 --chmod=0755 /unrar /usr/local/bin/unrar
 COPY --from=sevenzip /out/7zz /usr/local/bin/7zz
 # The licences unrar and 7-Zip ship under, beside the binaries' own notices
-COPY --from=unrar /out/doc /usr/local/share/doc/unrar
+COPY --from=ghcr.io/divbast/unrar:latest@sha256:a37d182b01ee0379654a5cbdc3505636272580c55fbf2b867faae7790f217420 /doc/unrar /usr/local/share/doc/unrar
 COPY --from=sevenzip /out/doc /usr/local/share/doc/7zip
 COPY --from=sbom /out/sbom.cdx.json /usr/local/share/divbast/sbom.cdx.json
 COPY --from=probe /out/divbast-sabnzbd /usr/local/bin/divbast-sabnzbd

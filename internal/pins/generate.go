@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-// Package pins generates the image's Python locks and unrar's checksum
-// from what the repository pins: SABnzbd's commit, the DHI Python image
-// and unrar's tarball in the Containerfile, and python/pins.txt.
+// Package pins generates the image's Python locks from what the
+// repository pins: SABnzbd's commit and the DHI Python image in the
+// Containerfile, and python/pins.txt.
 package pins
 
 import (
@@ -30,10 +30,9 @@ const (
 // Sources are where Generate reads upstream from.
 type Sources struct {
 	PyPI *PyPI
-	// GitHub serves raw files, at https://raw.githubusercontent.com, and
-	// RARLAB unrar's tarballs, at https://www.rarlab.com.
-	GitHub, RARLAB string
-	Client         *http.Client
+	// GitHub serves raw files, at https://raw.githubusercontent.com.
+	GitHub string
+	Client *http.Client
 	// Delays are the waits between tries: DefaultDelays when nil.
 	Delays []time.Duration
 }
@@ -43,7 +42,7 @@ func DefaultSources() Sources {
 	c := &http.Client{}
 	return Sources{
 		PyPI:   &PyPI{Base: "https://pypi.org", Client: c},
-		GitHub: "https://raw.githubusercontent.com", RARLAB: "https://www.rarlab.com", Client: c,
+		GitHub: "https://raw.githubusercontent.com", Client: c,
 	}
 }
 
@@ -51,7 +50,7 @@ func DefaultSources() Sources {
 const fetchers = 8
 
 // Generate reads the Containerfile and pins.txt in root, and returns the
-// contents those pins give the Containerfile and both locks, by path:
+// contents those pins give the locks, by path:
 //   - requirements.lock, from SABnzbd's requirements.txt at the
 //     Containerfile's commit, for Linux and its Python, merged with the
 //     pins upstream leaves to pins.txt;
@@ -59,12 +58,7 @@ const fetchers = 8
 //   - files.txt, every file of both locks by its sha256 and its URL;
 //   - renovate-bounds.json, a Renovate preset with a rule for each pin
 //     that upstream or a package of either lock bounds, as Bounds says,
-//     so Renovate proposes no version of it the build would refuse;
-//   - the Containerfile, with UNRAR_SHA256, when it is empty, filled in
-//     with the checksum of the tarball RARLAB serves for UNRAR_VERSION.
-//     RARLAB publishes no checksum, so the one first recorded is what holds
-//     the tarball from then on: a set UNRAR_SHA256 that is not what RARLAB
-//     serves now is an error, never rewritten.
+//     so Renovate proposes no version of it the build would refuse.
 //
 // The notes are what a person should know though nothing failed: each
 // yanked release upstream pins with ==, which the lock keeps.
@@ -113,23 +107,6 @@ func Generate(ctx context.Context, src Sources, root *os.Root) (out map[string][
 	if err != nil {
 		return nil, nil, err
 	}
-	sum, err := unrarSHA256(ctx, src.Client, src.RARLAB, args.UnrarVersion, src.Delays)
-	if err != nil {
-		return nil, nil, err
-	}
-	newCF := cf
-	switch args.UnrarSHA256 {
-	case "":
-		if newCF, err = SetArg(cf, "UNRAR_SHA256", sum); err != nil {
-			return nil, nil, err
-		}
-	case sum:
-	default:
-		return nil, nil, fmt.Errorf("RARLAB now serves a unrarsrc-%s.tar.gz whose sha256 is %s, not the %s UNRAR_SHA256 pins: "+
-			"RARLAB has changed the file under the same name. Compare it by hand with the .orig tarball of Debian's "+
-			"unrar-nonfree source package before changing the pin. If you moved UNRAR_VERSION, empty UNRAR_SHA256 and run again",
-			args.UnrarVersion, sum, args.UnrarSHA256)
-	}
 
 	again := "Do not edit it: change the pins, then run go run ./cmd/divbast-pins again."
 	var req, build, list, limits bytes.Buffer
@@ -166,7 +143,7 @@ func Generate(ctx context.Context, src Sources, root *os.Root) (out map[string][
 		}
 	}
 	return map[string][]byte{
-		ContainerfilePath: newCF, RequirementsLockPath: req.Bytes(), BuildLockPath: build.Bytes(), FilesPath: list.Bytes(),
+		RequirementsLockPath: req.Bytes(), BuildLockPath: build.Bytes(), FilesPath: list.Bytes(),
 		BoundsPath: limits.Bytes(),
 	}, notes, nil
 }

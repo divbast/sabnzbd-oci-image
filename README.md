@@ -40,14 +40,18 @@ Debian repository alone.
   the image's own OpenSSL and libraries. No package's install script runs
   outside its build. `pip check` then holds every package to what it
   requires.
-- `unrar` builds RARLAB's unrar from its source tarball, which SABnzbd
-  needs to unpack RAR archives; `sevenzip` builds 7-Zip's `7zz` from its
-  repository, without RAR support. Both link to the base's C and C++
-  libraries, so Docker's updates of the base reach them, and both are
-  hardened and checked: position-independent, bound at load, with a
-  read-only relocation table.
-- `sbom` writes an SBOM of unrar and 7zz, which the scan reads: see
-  [The scan](#the-scan).
+- `sevenzip` builds 7-Zip's `7zz` from its repository, without RAR
+  support. It links to the base's C and C++ libraries, so Docker's updates
+  of the base reach it, and is hardened and checked: position-independent,
+  bound at load, with a read-only relocation table.
+- unrar, which SABnzbd needs to unpack RAR archives, is not built here:
+  the final image copies it, with its licence, from the
+  `ghcr.io/divbast/unrar` carrier of
+  [divbast/native-tools](https://github.com/divbast/native-tools), by
+  digest. ci verifies that digest's attestation before the image builds.
+- `sbom` writes an SBOM of unrar and 7zz, which the scan reads: unrar's
+  component is the carrier's own, with its CPE, and only its path here is
+  added. See [The scan](#the-scan).
 - `probe` builds `divbast-sabnzbd`, the image's own command, a static Go
   binary on the standard library alone.
 
@@ -462,7 +466,7 @@ the attested index.
 ### The scan
 
 The scan fails a change only on a HIGH or CRITICAL finding the published
-image does not have already. unrar and 7zz are built here, so no image
+image does not have already. unrar and 7zz are not packages, so no image
 scan can tell what they are; the image names both in an SBOM,
 `/usr/local/share/divbast/sbom.cdx.json`, which its
 `io.github.divbast.scan.sboms` label declares, and the scan judges them by
@@ -477,14 +481,8 @@ every check passes:
   the commit's signature. A release signed by any other key stops at its
   pull request until a person checks the new key and replaces
   `keys/sabnzbd-release.asc`;
-- each new unrar tarball RARLAB's page links, betas included. RARLAB
-  publishes no checksum, so the pull request records the sha256 of the
-  tarball RARLAB served when it was made, and the build holds the download
-  to it from then on: nothing shows that the first download was RARLAB's
-  own. To compare it by hand, Debian's `unrar-nonfree` source package
-  carries the same tarball, a few days later, as its `.orig` file. If
-  RARLAB later serves a different file under the same name, every check
-  fails, naming both checksums, and nothing takes the new file;
+- each new digest of the unrar carrier, `ghcr.io/divbast/unrar:latest`,
+  which divbast/native-tools publishes;
 - each new 7-Zip release, with its commit;
 - each line of `python/pins.txt`: what SABnzbd's requirements leave
   unpinned, cryptography today, what a pinned package needs that they
@@ -492,10 +490,9 @@ every check passes:
 - the Docker Hardened Images, the Python runtime and its `-dev` image
   together, and the toolchain stage's packages.
 
-A pull request that moves SABnzbd, unrar or a pin runs
+A pull request that moves SABnzbd or a pin runs
 `go run ./cmd/divbast-pins` too, which writes the locks again from the
-new pins, and unrar's checksum into the `UNRAR_SHA256` that Renovate's
-unrar update empties, so they move together. setuptools stays
+new pins, so they move together. setuptools stays
 at 82.0.1, the newest httptools, which SABnzbd pins, builds with.
 
 So that Renovate does not propose a pin the build must refuse, the
@@ -524,9 +521,7 @@ gh variable set SABNZBD_AUTOMERGE --body disabled
 - `go run ./cmd/divbast-pins` writes `python/requirements.lock`,
   `python/build.lock`, `python/files.txt` and
   `python/renovate-bounds.json` from the pins, after a change
-  to `python/pins.txt` or the Containerfile's pins. It fills in the
-  Containerfile's `UNRAR_SHA256` only when it is empty: after moving
-  `UNRAR_VERSION` by hand, empty `UNRAR_SHA256`, then run it.
+  to `python/pins.txt` or the Containerfile's pins.
 
 ## AI/LLM Disclosure
 
